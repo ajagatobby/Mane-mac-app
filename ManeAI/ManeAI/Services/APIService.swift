@@ -2,7 +2,7 @@
 //  APIService.swift
 //  ManeAI
 //
-//  HTTP client for communicating with the NestJS sidecar
+//  HTTP client for communicating with the NestJS backend
 //
 
 import Foundation
@@ -32,7 +32,7 @@ enum MediaType: String, Codable, CaseIterable {
     }
 }
 
-// MARK: - API Models
+// MARK: - Ingest Models
 
 struct IngestRequest: Codable {
     let content: String?
@@ -49,6 +49,8 @@ struct IngestResponse: Codable {
     let success: Bool
     let message: String
 }
+
+// MARK: - Chat Models
 
 struct ChatRequest: Codable {
     let query: String
@@ -88,6 +90,8 @@ struct SearchResponse: Codable {
     let results: [SearchResult]
 }
 
+// MARK: - Document Models
+
 struct DocumentListResponse: Codable {
     let documents: [DocumentItem]
     let total: Int
@@ -99,13 +103,6 @@ struct DocumentItem: Codable, Identifiable {
     let filePath: String
     let mediaType: MediaType?
     let thumbnailPath: String?
-    let metadata: [String: String]?
-}
-
-struct HealthResponse: Codable {
-    let status: String
-    let timestamp: String
-    let uptime: Double
 }
 
 struct OllamaStatus: Codable {
@@ -114,250 +111,101 @@ struct OllamaStatus: Codable {
     let url: String
 }
 
-// MARK: - Agent Models
+// MARK: - Generic Response
 
-struct AgentExecuteRequest: Codable {
-    let command: String
-    let stream: Bool?
-}
-
-struct AgentFileAction: Codable, Identifiable {
-    let id: String
-    let type: String
-    let sourcePath: String?
-    let destinationPath: String?
-    let requiresPermission: String?
-    let description: String
-}
-
-struct AgentResponse: Codable {
-    let thought: String
-    let actions: [AgentFileAction]
-    let finalAnswer: String
-    let requiresConfirmation: Bool
-    let error: String?
-}
-
-struct ConfirmActionsRequest: Codable {
-    let sessionId: String
-}
-
-struct ConfirmActionsResponse: Codable {
-    let success: Bool
-    let actions: [AgentFileAction]
-    let message: String
-}
-
-struct ActionResultRequest: Codable {
-    let sessionId: String
-    let results: [ActionResultItem]
-}
-
-struct ActionResultItem: Codable {
-    let actionId: String
-    let success: Bool
-    let error: String?
-}
-
-struct DuplicateFile: Codable {
-    let filePath: String
-    let fileName: String
-    let mediaType: String
-    let similarity: Double?
-}
-
-struct DuplicateGroup: Codable {
-    let primary: DuplicateFile
-    let duplicates: [DuplicateFile]
-    let averageSimilarity: Double
-}
-
-struct DuplicatesResponse: Codable {
-    let success: Bool
-    let totalGroups: Int
-    let duplicates: [DuplicateGroup]
-}
-
-struct ClusterFile: Codable {
-    let filePath: String
-    let fileName: String
-    let mediaType: String
-}
-
-struct ClusterResult: Codable {
-    let id: Int
-    let label: String
-    let suggestedFolderName: String
-    let files: [ClusterFile]
-    let keywords: [String]
-}
-
-struct OrganizeRequest: Codable {
-    let targetFolder: String?
-    let preview: Bool?
-}
-
-struct OrganizeResponse: Codable {
-    let success: Bool
-    let preview: Bool
-    let clusters: [ClusterResult]
-    let actions: [AgentFileAction]?
-    let message: String?
-}
-
-struct AgentStatus: Codable {
-    let available: Bool
-    let tools: [String]
-    let features: AgentFeatures?
-}
-
-struct AgentFeatures: Codable {
-    let duplicateDetection: Bool
-    let autoOrganization: Bool
-}
-
-/// Stream event from agent execution
-struct AgentStreamEvent: Codable {
-    let type: String // "thought", "action", "observation", "final", "error"
-    let content: String
-    let action: AgentFileAction?
-}
-
-/// Generic success response
 struct SuccessResponse: Codable {
     let success: Bool
     let message: String?
 }
 
-/// Response for action results reporting
-struct ActionResultsResponse: Codable {
-    let success: Bool
-    let summary: ActionResultsSummary?
-}
-
-struct ActionResultsSummary: Codable {
-    let total: Int
-    let succeeded: Int
-    let failed: Int
-}
-
-/// Request for finding duplicates
-struct FindDuplicatesRequest: Codable {
-    let mediaType: String?
-    let threshold: Double?
-}
-
-// MARK: - Undo Models
-
-struct UndoResponse: Codable {
-    let success: Bool
-    let canUndo: Bool
-    let sessionId: String?
-    let description: String?
-    let actionCount: Int?
-    let actions: [AgentFileAction]
-    let message: String
-}
-
-struct UndoRequest: Codable {
-    let sessionId: String?
-}
-
-struct HistoryEntry: Codable, Identifiable {
-    var id: String { sessionId }
-    let sessionId: String
-    let description: String
-    let actionCount: Int
-    let successCount: Int
-    let createdAt: String
-    let canUndo: Bool
-}
-
-struct HistoryResponse: Codable {
-    let success: Bool
-    let entries: [HistoryEntry]
-    let undoableCount: Int
-}
-
 // MARK: - API Errors
 
 enum APIError: LocalizedError {
-    case invalidURL
     case networkError(Error)
-    case decodingError(Error)
     case serverError(Int, String)
-    case sidecarNotRunning
+    case decodingError(Error)
     
     var errorDescription: String? {
         switch self {
-        case .invalidURL:
-            return "Invalid URL"
         case .networkError(let error):
             return "Network error: \(error.localizedDescription)"
-        case .decodingError(let error):
-            return "Failed to decode response: \(error.localizedDescription)"
         case .serverError(let code, let message):
             return "Server error (\(code)): \(message)"
-        case .sidecarNotRunning:
-            return "Sidecar is not running"
+        case .decodingError(let error):
+            return "Decoding error: \(error.localizedDescription)"
         }
     }
 }
 
 // MARK: - API Service
 
-@MainActor
 class APIService: ObservableObject {
-    
     private let baseURL: URL
     private let session: URLSession
     private let maxRetries = 3
     private let retryDelay: TimeInterval = 1.0
     
-    @Published var isConnected = false
-    
-    init(baseURL: URL = URL(string: "http://127.0.0.1:3000")!) {
-        self.baseURL = baseURL
+    init(baseURL: String = "http://localhost:3000") {
+        self.baseURL = URL(string: baseURL)!
         
         let config = URLSessionConfiguration.default
-        // Increased timeout for CLIP/Whisper model loading and processing
-        config.timeoutIntervalForRequest = 180  // 3 minutes for media processing
-        config.timeoutIntervalForResource = 600 // 10 minutes for large files
+        config.timeoutIntervalForRequest = 60
+        config.timeoutIntervalForResource = 300
         self.session = URLSession(configuration: config)
     }
     
     // MARK: - Health Check
     
-    func checkHealth() async throws -> HealthResponse {
+    func healthCheck() async throws -> Bool {
+        struct HealthResponse: Codable {
+            let status: String
+        }
         let response: HealthResponse = try await get(path: "/health")
-        isConnected = true
-        return response
+        return response.status == "healthy"
     }
     
-    // MARK: - Ingest Endpoints
+    // MARK: - Document Endpoints
     
-    func ingestDocument(content: String? = nil, filePath: String, mediaType: MediaType? = nil, metadata: [String: String]? = nil) async throws -> IngestResponse {
-        let request = IngestRequest(content: content, filePath: filePath, mediaType: mediaType, metadata: metadata)
+    func ingestDocument(
+        content: String,
+        filePath: String,
+        mediaType: MediaType = .text,
+        metadata: [String: String]? = nil
+    ) async throws -> IngestResponse {
+        let request = IngestRequest(
+            content: content,
+            filePath: filePath,
+            mediaType: mediaType,
+            metadata: metadata
+        )
         return try await post(path: "/ingest", body: request)
     }
     
-    /// Ingest a media file (image, audio) - no content needed
-    func ingestMediaFile(filePath: String, mediaType: MediaType? = nil, metadata: [String: String]? = nil) async throws -> IngestResponse {
-        let request = IngestRequest(content: nil, filePath: filePath, mediaType: mediaType, metadata: metadata)
-        return try await post(path: "/ingest", body: request)
-    }
-    
-    func deleteDocument(id: String) async throws {
-        let _: EmptyResponse = try await delete(path: "/ingest/\(id)")
+    func ingestMediaFile(
+        filePath: String,
+        mediaType: MediaType,
+        metadata: [String: String]? = nil
+    ) async throws -> IngestResponse {
+        let request = IngestRequest(
+            content: nil,
+            filePath: filePath,
+            mediaType: mediaType,
+            metadata: metadata
+        )
+        return try await post(path: "/ingest/media", body: request)
     }
     
     func listDocuments() async throws -> DocumentListResponse {
-        return try await get(path: "/ingest")
+        return try await get(path: "/documents")
     }
     
     func getDocumentCount() async throws -> Int {
-        let response: [String: Int] = try await get(path: "/ingest/count")
-        return response["count"] ?? 0
+        let response = try await listDocuments()
+        return response.total
+    }
+    
+    func deleteDocument(id: String) async throws {
+        let _: SuccessResponse = try await delete(path: "/documents/\(id)")
     }
     
     // MARK: - Chat Endpoints
@@ -393,6 +241,12 @@ class APIService: ObservableObject {
                     for try await line in bytes.lines {
                         if line.hasPrefix("data: ") {
                             let jsonString = String(line.dropFirst(6))
+                            
+                            if jsonString == "[DONE]" {
+                                continuation.finish()
+                                return
+                            }
+                            
                             if let data = jsonString.data(using: .utf8),
                                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                                 
@@ -429,144 +283,51 @@ class APIService: ObservableObject {
         return try await get(path: "/chat/status")
     }
     
-    // MARK: - Agent Endpoints
+    // MARK: - Project Endpoints
     
-    /// Execute an agent command (non-streaming)
-    func agentExecute(command: String) async throws -> AgentResponse {
-        let request = AgentExecuteRequest(command: command, stream: false)
-        return try await post(path: "/agent/execute", body: request)
+    func indexProject(path: String, maxDepth: Int? = nil, maxFiles: Int? = nil, skipSkeletons: Bool? = nil) async throws -> IndexProjectResponse {
+        let request = IndexProjectRequest(path: path, maxDepth: maxDepth, maxFiles: maxFiles, skipSkeletons: skipSkeletons)
+        return try await post(path: "/projects/index", body: request)
     }
     
-    /// Execute an agent command with streaming
-    func agentExecuteStream(command: String) -> AsyncThrowingStream<AgentStreamEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    let url = baseURL.appendingPathComponent("/agent/execute")
-                    var request = URLRequest(url: url)
-                    request.httpMethod = "POST"
-                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-                    
-                    let body = AgentExecuteRequest(command: command, stream: true)
-                    request.httpBody = try JSONEncoder().encode(body)
-                    
-                    let (bytes, response) = try await session.bytes(for: request)
-                    
-                    guard let httpResponse = response as? HTTPURLResponse else {
-                        throw APIError.networkError(NSError(domain: "Invalid response", code: 0))
-                    }
-                    
-                    if httpResponse.statusCode != 200 {
-                        throw APIError.serverError(httpResponse.statusCode, "Agent stream failed")
-                    }
-                    
-                    for try await line in bytes.lines {
-                        if line.hasPrefix("data: ") {
-                            let jsonString = String(line.dropFirst(6))
-                            
-                            if jsonString == "[DONE]" {
-                                continuation.finish()
-                                return
-                            }
-                            
-                            if let data = jsonString.data(using: .utf8) {
-                                do {
-                                    let event = try JSONDecoder().decode(AgentStreamEvent.self, from: data)
-                                    continuation.yield(event)
-                                } catch {
-                                    // Try parsing as raw JSON with manual action extraction
-                                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                                        var parsedAction: AgentFileAction? = nil
-                                        
-                                        // Try to parse the action object if present
-                                        if let actionDict = json["action"] as? [String: Any] {
-                                            parsedAction = AgentFileAction(
-                                                id: actionDict["id"] as? String ?? "",
-                                                type: actionDict["type"] as? String ?? "",
-                                                sourcePath: actionDict["sourcePath"] as? String,
-                                                destinationPath: actionDict["destinationPath"] as? String,
-                                                requiresPermission: actionDict["requiresPermission"] as? String,
-                                                description: actionDict["description"] as? String ?? ""
-                                            )
-                                        }
-                                        
-                                        let event = AgentStreamEvent(
-                                            type: json["type"] as? String ?? "unknown",
-                                            content: json["content"] as? String ?? "",
-                                            action: parsedAction
-                                        )
-                                        continuation.yield(event)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
+    func reindexProject(id: String, maxDepth: Int? = nil, maxFiles: Int? = nil, skipSkeletons: Bool? = nil) async throws -> IndexProjectResponse {
+        struct ReindexRequest: Codable {
+            let maxDepth: Int?
+            let maxFiles: Int?
+            let skipSkeletons: Bool?
         }
+        let request = ReindexRequest(maxDepth: maxDepth, maxFiles: maxFiles, skipSkeletons: skipSkeletons)
+        return try await post(path: "/projects/\(id)/reindex", body: request)
     }
     
-    /// Confirm pending actions for execution
-    func agentConfirmActions(sessionId: String) async throws -> ConfirmActionsResponse {
-        let request = ConfirmActionsRequest(sessionId: sessionId)
-        return try await post(path: "/agent/confirm", body: request)
+    func listProjects() async throws -> ListProjectsResponse {
+        return try await get(path: "/projects")
     }
     
-    /// Cancel pending actions
-    func agentCancelActions(sessionId: String) async throws {
-        let request = ConfirmActionsRequest(sessionId: sessionId)
-        let _: SuccessResponse = try await post(path: "/agent/cancel", body: request)
+    func getProject(id: String) async throws -> GetProjectResponse {
+        return try await get(path: "/projects/\(id)")
     }
     
-    /// Report action execution results
-    func agentReportResults(sessionId: String, results: [ActionResultItem]) async throws {
-        let request = ActionResultRequest(sessionId: sessionId, results: results)
-        let _: ActionResultsResponse = try await post(path: "/agent/results", body: request)
+    func deleteProject(id: String) async throws -> DeleteProjectResponse {
+        return try await delete(path: "/projects/\(id)")
     }
     
-    /// Find duplicate files
-    func agentFindDuplicates(mediaType: String? = nil, threshold: Double? = nil) async throws -> DuplicatesResponse {
-        let request = FindDuplicatesRequest(mediaType: mediaType, threshold: threshold)
-        return try await post(path: "/agent/duplicates", body: request)
+    func searchProjects(query: String, limit: Int? = nil) async throws -> SearchProjectsResponse {
+        let request = SearchProjectsRequest(query: query, limit: limit)
+        return try await post(path: "/projects/search", body: request)
     }
     
-    /// Auto-organize files
-    func agentOrganize(targetFolder: String? = nil, preview: Bool = true) async throws -> OrganizeResponse {
-        let request = OrganizeRequest(targetFolder: targetFolder, preview: preview)
-        return try await post(path: "/agent/organize", body: request)
+    func searchCode(query: String, limit: Int? = nil, projectId: String? = nil) async throws -> SearchCodeResponse {
+        let request = SearchCodeRequest(query: query, limit: limit, projectId: projectId)
+        return try await post(path: "/projects/search/code", body: request)
     }
     
-    /// Get agent status
-    func getAgentStatus() async throws -> AgentStatus {
-        return try await get(path: "/agent/status")
-    }
-    
-    // MARK: - Undo Endpoints
-    
-    /// Check if undo is available
-    func getUndoStatus() async throws -> UndoResponse {
-        return try await get(path: "/agent/undo")
-    }
-    
-    /// Execute undo for the most recent operation
-    func executeUndo(sessionId: String? = nil) async throws -> UndoResponse {
-        let request = UndoRequest(sessionId: sessionId)
-        return try await post(path: "/agent/undo", body: request)
-    }
-    
-    /// Get action history
-    func getActionHistory() async throws -> HistoryResponse {
-        return try await get(path: "/agent/history")
-    }
-    
-    /// Clear action history
-    func clearActionHistory() async throws {
-        let _: SuccessResponse = try await post(path: "/agent/history/clear", body: EmptyBody())
+    func getProjectSkeletons(projectId: String, limit: Int? = nil) async throws -> ProjectSkeletonsResponse {
+        var path = "/projects/\(projectId)/skeletons"
+        if let limit = limit {
+            path += "?limit=\(limit)"
+        }
+        return try await get(path: path)
     }
     
     // MARK: - Private HTTP Methods
@@ -629,9 +390,3 @@ class APIService: ObservableObject {
         }
     }
 }
-
-// Helper for empty responses
-private struct EmptyResponse: Decodable {}
-
-// Helper for empty request body
-private struct EmptyBody: Encodable {}

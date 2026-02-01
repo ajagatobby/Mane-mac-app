@@ -1,192 +1,221 @@
-# ManeAI - Local AI File Organizer
+# ManeAI - Local AI Knowledge Base
 
-A native macOS application that helps you organize and understand your files using local AI. Built with SwiftUI for the frontend and NestJS (TypeScript) for the AI backend.
+A native macOS application for building a personal knowledge base with AI-powered search and chat. Index documents, code projects, images, and audio files - then ask questions using RAG (Retrieval Augmented Generation). All processing happens locally.
+
+## Features
+
+### 🗂️ Unified Knowledge Base
+- **Auto-detect Projects**: Import folders and ManeAI automatically detects code projects
+- **Smart Indexing**: Code projects are indexed with function/class signatures for semantic search
+- **Multimodal Support**: Import text, images, and audio files
+- **Semantic Search**: Find files by meaning, not just keywords
+
+### 💬 RAG Chat
+- **Ask Questions**: Chat about your indexed documents and code
+- **Source Citations**: See which files informed the AI's response
+- **Streaming Responses**: Real-time streaming for a fluid chat experience
+
+### 🔒 Privacy First
+- **100% Local**: No data leaves your machine
+- **Ollama Powered**: Uses local LLMs (qwen2.5)
+- **Vector DB**: LanceDB stores embeddings locally
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     macOS App (SwiftUI)                      │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │   Sidebar   │  │  Documents  │  │    Chat / Detail    │  │
-│  │  Navigation │  │    List     │  │       View          │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
-│                            │                                 │
-│                    HTTP (localhost:3000)                     │
-└────────────────────────────┼────────────────────────────────┘
-                             │
-┌────────────────────────────┼────────────────────────────────┐
-│                    NestJS Sidecar                            │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │   Ingest    │  │    Chat     │  │    LanceDB          │  │
-│  │  Controller │  │  Controller │  │    (Vector DB)      │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
-│                            │                                 │
-│                    LangChain + Ollama                        │
-└────────────────────────────┼────────────────────────────────┘
-                             │
-                      ┌──────┴──────┐
-                      │   Ollama    │
-                      │  (qwen2.5)  │
-                      └─────────────┘
+│                   macOS App (SwiftUI)                       │
+│  ┌───────────┐  ┌───────────────┐  ┌───────────────────┐   │
+│  │  Sidebar  │  │ Knowledge Base│  │    AI Chat        │   │
+│  │    Nav    │  │  (Docs+Proj)  │  │                   │   │
+│  └───────────┘  └───────────────┘  └───────────────────┘   │
+│                          │                                  │
+│                  HTTP (localhost:3000)                      │
+└──────────────────────────┼──────────────────────────────────┘
+                           │
+┌──────────────────────────┼──────────────────────────────────┐
+│                   NestJS Backend                            │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────────────┐    │
+│  │ Ingest  │ │  Chat   │ │ Search  │ │    Projects    │    │
+│  │   API   │ │   API   │ │   API   │ │      API       │    │
+│  └─────────┘ └─────────┘ └─────────┘ └────────────────┘    │
+│                          │                                  │
+│  ┌───────────────────────┴───────────────────────────┐     │
+│  │              LanceDB (Vector Database)             │     │
+│  │   documents | projects | code_skeletons            │     │
+│  └───────────────────────────────────────────────────┘     │
+│                          │                                  │
+│                  LangChain + Ollama                         │
+└──────────────────────────┼──────────────────────────────────┘
+                           │
+                    ┌──────┴──────┐
+                    │   Ollama    │
+                    │  (Local AI) │
+                    └─────────────┘
 ```
 
-## Features
+## Quick Start
 
-- **Document Ingestion**: Import text files into a vector database for semantic search
-- **AI Chat**: Ask questions about your files using RAG (Retrieval Augmented Generation)
-- **Local Processing**: All AI processing happens locally using Ollama
-- **Native macOS UI**: Beautiful SwiftUI interface with 3-pane navigation
+### Prerequisites
 
-## Prerequisites
+1. **Install Ollama**
+   ```bash
+   brew install ollama
+   ```
 
-### 1. Install Ollama
+2. **Pull the AI model**
+   ```bash
+   ollama pull qwen2.5
+   ```
 
+3. **Start Ollama**
+   ```bash
+   ollama serve
+   ```
+
+4. **Install Node.js**
+   ```bash
+   brew install node pnpm
+   ```
+
+### Running the App
+
+#### Backend
 ```bash
-brew install ollama
+cd mane-ai-backend
+pnpm install
+pnpm start:dev
 ```
 
-### 2. Pull the Qwen model
+#### Frontend
+1. Open `ManeAI/ManeAI.xcodeproj` in Xcode
+2. Build and run (Cmd+R)
 
-```bash
-ollama pull qwen2.5
-```
+## Usage
 
-### 3. Start Ollama
+### Importing Content
 
-```bash
-ollama serve
-```
+Click **Import** in the Knowledge Base to add files or folders:
 
-### 4. Install Node.js (for development)
+| Content Type | What Happens |
+|--------------|--------------|
+| **Code Project** (has package.json, Cargo.toml, etc.) | Indexed as a Project with code signatures |
+| **Folder** (no manifest) | All supported files imported as Documents |
+| **Individual Files** | Imported as Documents |
 
-```bash
-brew install node
-```
+### Supported File Types
+
+- **Text**: txt, md, swift, ts, js, py, json, yaml, xml, html, css, csv
+- **Images**: png, jpg, jpeg, gif, webp, heic (with AI-generated captions)
+- **Audio**: mp3, wav, m4a, aiff, flac, ogg (with transcription)
+
+### Project Detection
+
+Projects are auto-detected by these manifest files:
+
+| File | Language/Framework |
+|------|-------------------|
+| `package.json` | Node.js / JavaScript / TypeScript |
+| `Cargo.toml` | Rust |
+| `pyproject.toml`, `setup.py`, `requirements.txt` | Python |
+| `go.mod` | Go |
+| `pom.xml`, `build.gradle` | Java |
+| `Gemfile` | Ruby |
+| `composer.json` | PHP |
+| `Package.swift` | Swift |
+| `pubspec.yaml` | Dart/Flutter |
+| `.git` | Any Git repository |
+
+### Chat
+
+Use the AI Chat to ask questions about your indexed content:
+
+- "What files do I have about authentication?"
+- "Summarize my Python projects"
+- "Find code that handles database connections"
+- "What images contain landscapes?"
 
 ## Project Structure
 
 ```
 mane-ai/
-├── ManeAI/                    # SwiftUI macOS App
+├── ManeAI/                        # SwiftUI macOS App
 │   └── ManeAI/
 │       ├── Services/
-│       │   ├── SidecarManager.swift   # Process lifecycle
-│       │   └── APIService.swift       # HTTP client
+│       │   ├── SidecarManager.swift    # Backend lifecycle
+│       │   └── APIService.swift        # HTTP client
 │       ├── Views/
-│       │   ├── ContentView.swift      # Main layout
-│       │   ├── SidebarView.swift      # Navigation
-│       │   ├── DocumentsView.swift    # File management
-│       │   ├── ChatView.swift         # AI chat
-│       │   └── SettingsView.swift     # Settings
+│       │   ├── ContentView.swift       # Main layout
+│       │   ├── SidebarView.swift       # Navigation
+│       │   ├── DocumentsView.swift     # Knowledge Base
+│       │   ├── ChatView.swift          # AI chat
+│       │   └── SettingsView.swift      # Settings
 │       ├── Models/
-│       │   ├── Document.swift
-│       │   └── ChatMessage.swift
+│       │   ├── Document.swift          # Document model
+│       │   ├── Project.swift           # Project model
+│       │   └── ChatMessage.swift       # Chat model
 │       └── Utilities/
-│           └── SecurityBookmarks.swift
+│           └── SecurityBookmarks.swift # Sandbox access
 │
-└── mane-ai-backend/           # NestJS Backend
+└── mane-ai-backend/               # NestJS Backend
     └── src/
-        ├── config/            # CLI argument parsing
-        ├── lancedb/           # Vector DB + embeddings
-        ├── ollama/            # LangChain + Ollama
-        ├── ingest/            # /ingest endpoint
-        └── chat/              # /chat endpoint
+        ├── config/                # Configuration
+        ├── lancedb/               # Vector DB service
+        ├── ollama/                # LangChain + Ollama
+        ├── multimodal/            # Image/audio processing
+        ├── ingest/                # Document ingestion
+        ├── chat/                  # RAG chat
+        └── projects/              # Project indexing
 ```
 
-## Development Setup
+## API Reference
 
-### Backend (NestJS)
+### Documents
 
-```bash
-cd mane-ai-backend
-
-# Install dependencies
-pnpm install
-
-# Run in development mode
-pnpm start:dev
-```
-
-The backend will start on `http://localhost:3000`.
-
-### Frontend (SwiftUI)
-
-1. Open `ManeAI/ManeAI.xcodeproj` in Xcode
-2. Select your development team in Signing & Capabilities
-3. Build and run (Cmd+R)
-
-### Building for Production
-
-```bash
-cd mane-ai-backend
-
-# Build the sidecar package
-pnpm run build:sidecar
-```
-
-This creates a `sidecar/` folder containing:
-- Compiled JavaScript
-- Required node_modules
-- Launch script
-
-## API Endpoints
-
-### Health Check
-```
-GET /health
-Response: { status: "healthy", timestamp: "...", uptime: 123 }
-```
-
-### Ingest Document
-```
-POST /ingest
-Body: { content: "...", filePath: "/path/to/file.txt", metadata: {} }
-Response: { id: "doc_...", fileName: "file.txt", success: true }
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/ingest` | POST | Ingest a text document |
+| `/ingest/media` | POST | Ingest image/audio |
+| `/documents` | GET | List all documents |
+| `/documents/:id` | DELETE | Delete a document |
 
 ### Chat
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/chat` | POST | Chat with RAG |
+| `/chat/search` | POST | Semantic search |
+| `/chat/status` | GET | Get Ollama status |
+
+### Projects
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/projects/index` | POST | Index a project |
+| `/projects` | GET | List all projects |
+| `/projects/:id` | GET | Get project details |
+| `/projects/:id` | DELETE | Delete a project |
+| `/projects/search` | POST | Search projects |
+| `/projects/search/code` | POST | Search code signatures |
+
+## Configuration
+
+### Backend CLI Arguments
+
+```bash
+pnpm start:dev -- \
+  --port 3000 \
+  --ollama-url http://localhost:11434 \
+  --ollama-model qwen2.5 \
+  --db-path ~/Library/Application\ Support/ManeAI/lancedb
 ```
-POST /chat
-Body: { query: "What files do I have?", stream: true }
-Response: SSE stream or { answer: "...", sources: [...] }
-```
-
-### Search
-```
-POST /chat/search
-Body: { query: "find documents about...", limit: 5 }
-Response: { results: [...] }
-```
-
-## Bundling the Sidecar in the App
-
-For distribution, you need to bundle the sidecar with the macOS app:
-
-1. Build the sidecar: `pnpm run build:sidecar`
-2. In Xcode, add the `sidecar/` folder to your project
-3. Add it to "Copy Bundle Resources" build phase
-4. Bundle Node.js runtime (or require users to install it)
-
-### Alternative: Use a Pre-built Node.js
-
-For simplicity during development, the app checks if Node.js is available at `/usr/local/bin/node`. For production distribution, you should bundle a Node.js runtime.
-
-## Entitlements
-
-The app requires these entitlements for sandboxed operation:
-
-- `com.apple.security.app-sandbox`: Enable sandbox
-- `com.apple.security.files.user-selected.read-write`: Access user files
-- `com.apple.security.network.client`: Connect to localhost
-- `com.apple.security.cs.allow-unsigned-executable-memory`: Run Node.js
 
 ## Troubleshooting
 
 ### Backend not starting
 - Check if port 3000 is available
-- Ensure Node.js is installed
-- Check the logs in Settings > View Logs
+- Ensure Node.js 18+ is installed
+- Check logs in Settings > View Logs
 
 ### Ollama not available
 - Run `ollama serve` in terminal
@@ -194,9 +223,15 @@ The app requires these entitlements for sandboxed operation:
 - Pull the model: `ollama pull qwen2.5`
 
 ### File import fails
-- Ensure the file is a supported type (txt, md, swift, etc.)
+- Ensure the file is a supported type
 - Check file permissions
-- The app needs read access to the file
+- The app needs read access via Security-Scoped Bookmarks
+
+### Clear vector database
+```bash
+rm -rf ~/Library/Application\ Support/ManeAI/lancedb
+```
+Then restart the backend.
 
 ## License
 

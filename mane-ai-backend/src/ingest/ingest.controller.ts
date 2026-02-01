@@ -27,6 +27,15 @@ export class IngestController {
     return this.ingestService.ingestDocument(dto);
   }
 
+  @Post('media')
+  @HttpCode(HttpStatus.CREATED)
+  async ingestMedia(
+    @Body() dto: IngestDocumentDto,
+  ): Promise<IngestResponseDto> {
+    // Same as ingestDocument - handles images, audio, etc.
+    return this.ingestService.ingestDocument(dto);
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   async deleteDocument(

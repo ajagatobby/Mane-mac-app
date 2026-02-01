@@ -21,6 +21,7 @@ struct DocumentsView: View {
     @State private var errorMessage: String?
     @State private var filterMediaType: MediaType? = nil
     @State private var importProgress: (current: Int, total: Int)? = nil
+    @State private var showDeleteAllConfirmation = false
     
     // Supported file types for multimodal ingestion
     private let supportedTypes: [UTType] = [
@@ -110,6 +111,16 @@ struct DocumentsView: View {
                 }
                 .help("Import files or folder to your knowledge base")
                 
+                // Delete all button
+                if !documents.isEmpty {
+                    Button(role: .destructive) {
+                        showDeleteAllConfirmation = true
+                    } label: {
+                        Label("Delete All", systemImage: "trash")
+                    }
+                    .help("Delete all documents")
+                }
+                
                 if isLoading {
                     if let progress = importProgress {
                         HStack(spacing: 4) {
@@ -125,6 +136,20 @@ struct DocumentsView: View {
                     }
                 }
             }
+        }
+        .confirmationDialog(
+            "Delete All Documents",
+            isPresented: $showDeleteAllConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete All (\(documents.count) documents)", role: .destructive) {
+                Task {
+                    await deleteAllDocuments()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently delete all \(documents.count) documents from your knowledge base. This action cannot be undone.")
         }
         .alert("Error", isPresented: .constant(errorMessage != nil)) {
             Button("OK") {
@@ -327,17 +352,41 @@ struct DocumentsView: View {
     }
     
     private func deleteDocument(_ document: Document) async {
+        // Try to delete from backend, ignore 404 (already deleted)
         do {
             try await apiService.deleteDocument(id: document.id)
-            modelContext.delete(document)
-            try? modelContext.save()
-            
-            if selectedDocument == document {
-                selectedDocument = nil
-            }
         } catch {
-            errorMessage = "Failed to delete: \(error.localizedDescription)"
+            print("Backend delete skipped: \(error.localizedDescription)")
         }
+        
+        // Always delete from local SwiftData
+        modelContext.delete(document)
+        try? modelContext.save()
+        
+        if selectedDocument == document {
+            selectedDocument = nil
+        }
+    }
+    
+    private func deleteAllDocuments() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        for document in documents {
+            // Try to delete from backend, but ignore 404 errors (already deleted)
+            do {
+                try await apiService.deleteDocument(id: document.id)
+            } catch {
+                // Ignore - document may already be deleted from backend
+                print("Backend delete skipped for \(document.fileName): \(error.localizedDescription)")
+            }
+            
+            // Always delete from local SwiftData
+            modelContext.delete(document)
+        }
+        
+        try? modelContext.save()
+        selectedDocument = nil
     }
     
     private func refreshDocuments() async {

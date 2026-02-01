@@ -91,6 +91,9 @@ export class OllamaService implements OnModuleInit {
       }
     }
 
+    // Get document stats for count queries
+    const stats = await this.getDocumentStats();
+
     // Search for relevant documents (text + media)
     this.logger.log('Searching for relevant context...');
     const searchResults = await this.searchAllDocuments(query, 5);
@@ -105,8 +108,8 @@ export class OllamaService implements OnModuleInit {
       relevance: r.score,
     }));
 
-    // Create the RAG prompt
-    const systemPrompt = this.createSystemPrompt(context);
+    // Create the RAG prompt with stats
+    const systemPrompt = this.createSystemPrompt(context, stats);
 
     this.logger.log('Sending query to Ollama...');
     const messages = [new SystemMessage(systemPrompt), new HumanMessage(query)];
@@ -146,6 +149,9 @@ export class OllamaService implements OnModuleInit {
       }
     }
 
+    // Get document stats for count queries
+    const stats = await this.getDocumentStats();
+
     // Search for relevant documents (text + media)
     this.logger.log('Searching for relevant context...');
     const searchResults = await this.searchAllDocuments(query, 5);
@@ -153,8 +159,8 @@ export class OllamaService implements OnModuleInit {
     // Build context from search results
     const context = this.buildContext(searchResults);
 
-    // Create the RAG prompt
-    const systemPrompt = this.createSystemPrompt(context);
+    // Create the RAG prompt with stats
+    const systemPrompt = this.createSystemPrompt(context, stats);
 
     this.logger.log('Starting streaming response from Ollama...');
     const messages = [new SystemMessage(systemPrompt), new HumanMessage(query)];
@@ -251,19 +257,56 @@ export class OllamaService implements OnModuleInit {
     return contextParts.join('\n\n---\n\n');
   }
 
-  private createSystemPrompt(context: string): string {
+  /**
+   * Get document statistics from the database
+   */
+  private async getDocumentStats(): Promise<{
+    total: number;
+    byType: { text: number; image: number; audio: number };
+  }> {
+    try {
+      const documents = await this.lanceDBService.getAllDocuments();
+      const stats = {
+        total: documents.length,
+        byType: { text: 0, image: 0, audio: 0 },
+      };
+
+      for (const doc of documents) {
+        const type = (doc.mediaType as 'text' | 'image' | 'audio') || 'text';
+        if (type in stats.byType) {
+          stats.byType[type]++;
+        }
+      }
+
+      return stats;
+    } catch (error) {
+      return { total: 0, byType: { text: 0, image: 0, audio: 0 } };
+    }
+  }
+
+  private createSystemPrompt(
+    context: string,
+    stats: { total: number; byType: { text: number; image: number; audio: number } },
+  ): string {
     return `You are a helpful AI assistant that helps users organize and understand their files. 
 You have access to the user's document library and can answer questions based on the content of their files.
 
-CONTEXT FROM USER'S DOCUMENTS:
+KNOWLEDGE BASE STATISTICS:
+- Total documents: ${stats.total}
+- Text documents: ${stats.byType.text}
+- Images: ${stats.byType.image}
+- Audio files: ${stats.byType.audio}
+
+RELEVANT DOCUMENTS (showing up to 5 most relevant):
 ${context}
 
 INSTRUCTIONS:
 1. Answer the user's question based primarily on the context provided above.
-2. If the context contains relevant information, cite which document(s) you're referencing.
-3. If the context doesn't contain enough information to fully answer the question, say so clearly.
-4. Be concise but thorough in your responses.
-5. If asked about file organization, provide practical suggestions based on the documents you see.
+2. When asked "how many files/documents" use the KNOWLEDGE BASE STATISTICS above, not just the relevant documents shown.
+3. If the context contains relevant information, cite which document(s) you're referencing.
+4. If the context doesn't contain enough information to fully answer the question, say so clearly.
+5. Be concise but thorough in your responses.
+6. If asked about file organization, provide practical suggestions based on the documents you see.
 
 Remember: You're helping the user understand and organize THEIR files, so be specific and actionable.`;
   }
