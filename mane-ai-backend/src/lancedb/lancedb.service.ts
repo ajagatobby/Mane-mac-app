@@ -308,6 +308,8 @@ export class LanceDBService implements OnModuleInit {
 
   /**
    * Search text documents
+   * @param query - The search query
+   * @param limit - Maximum number of results. Use 0 to return all results.
    */
   async searchText(query: string, limit: number = 5): Promise<SearchResult[]> {
     if (!this.textTable) {
@@ -315,9 +317,13 @@ export class LanceDBService implements OnModuleInit {
     }
 
     const queryVector = await this.generateEmbedding(query);
+    
+    // If limit is 0, return all results (use a very high number)
+    const effectiveLimit = limit <= 0 ? 10000 : limit;
+    
     const results = await this.textTable
       .vectorSearch(queryVector)
-      .limit(limit)
+      .limit(effectiveLimit)
       .toArray();
 
     return results.map((row: any) => ({
@@ -341,14 +347,20 @@ export class LanceDBService implements OnModuleInit {
   /**
    * Hybrid search across text documents
    * Combines vector search (semantic) with keyword matching (exact)
+   * @param query - The search query
+   * @param limit - Maximum number of results. Use 0 to return all results.
    */
   async hybridSearch(query: string, limit: number = 5): Promise<SearchResult[]> {
     if (!this.textTable) {
       throw new Error('Text table not initialized');
     }
 
+    // If limit is 0, we want all results
+    const returnAll = limit <= 0;
+    const searchLimit = returnAll ? 0 : limit * 2;
+    
     // Run vector search
-    const vectorResults = await this.searchText(query, limit * 2);
+    const vectorResults = await this.searchText(query, searchLimit);
 
     // Extract keywords for boosting exact matches
     const keywords = query
@@ -384,7 +396,10 @@ export class LanceDBService implements OnModuleInit {
       };
     });
 
-    return scoredResults.sort((a, b) => b.score - a.score).slice(0, limit);
+    const sortedResults = scoredResults.sort((a, b) => b.score - a.score);
+    
+    // Return all results if limit is 0, otherwise slice to limit
+    return returnAll ? sortedResults : sortedResults.slice(0, limit);
   }
 
   /**

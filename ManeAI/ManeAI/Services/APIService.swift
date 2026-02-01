@@ -361,6 +361,10 @@ class APIService: ObservableObject {
         }
     }
     
+    /// Search documents with semantic + keyword matching
+    /// - Parameters:
+    ///   - query: The search query
+    ///   - limit: Maximum number of results. Pass 0 to return all results. Default is 5.
     func search(query: String, limit: Int = 5) async throws -> SearchResponse {
         let request = SearchRequest(query: query, limit: limit)
         return try await post(path: "/chat/search", body: request)

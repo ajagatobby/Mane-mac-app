@@ -35,9 +35,13 @@ export class ChatService {
     this.logger.log(
       `Processing search query: ${dto.query.substring(0, 50)}...`,
     );
+    
+    // Use limit from DTO, default to 5. A value of 0 means return all results.
+    const limit = dto.limit === undefined ? 5 : dto.limit;
+    
     const results = await this.lanceDBService.hybridSearch(
       dto.query,
-      dto.limit || 5,
+      limit,
     );
 
     return {
