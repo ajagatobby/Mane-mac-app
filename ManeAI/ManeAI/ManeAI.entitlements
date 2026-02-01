@@ -2,8 +2,24 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- App Sandbox DISABLED for development -->
+    <!-- App Sandbox ENABLED for production -->
     <key>com.apple.security.app-sandbox</key>
-    <false/>
+    <true/>
+    
+    <!-- Allow user-selected file access (read-write) -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    
+    <!-- Allow app-scoped bookmarks for persistent access -->
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+    
+    <!-- Allow network client access (for backend communication) -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    
+    <!-- Allow reading/writing to Downloads folder -->
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
 </dict>
 </plist>

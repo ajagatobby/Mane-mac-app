@@ -238,6 +238,147 @@ class SecurityBookmarks {
         }
     }
     
+    /// List all files recursively in a directory with bookmark access
+    func listFilesRecursively(in directoryURL: URL, extensions: [String]? = nil) throws -> [URL] {
+        guard startAccessing(directoryURL) else {
+            if let resolvedURL = resolveBookmark(for: directoryURL.path) {
+                guard startAccessing(resolvedURL) else {
+                    throw SecurityBookmarkError.accessDenied(directoryURL.path)
+                }
+                defer { stopAccessing(resolvedURL) }
+                return try listFilesRecursivelyInternal(in: resolvedURL, extensions: extensions)
+            }
+            throw SecurityBookmarkError.accessDenied(directoryURL.path)
+        }
+        
+        defer { stopAccessing(directoryURL) }
+        return try listFilesRecursivelyInternal(in: directoryURL, extensions: extensions)
+    }
+    
+    private func listFilesRecursivelyInternal(in directory: URL, extensions: [String]?) throws -> [URL] {
+        let fileManager = FileManager.default
+        var results: [URL] = []
+        
+        guard let enumerator = fileManager.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else {
+            return results
+        }
+        
+        for case let url as URL in enumerator {
+            // Skip directories
+            guard let resourceValues = try? url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey]),
+                  resourceValues.isRegularFile == true else {
+                continue
+            }
+            
+            // Filter by extension if specified
+            if let extensions = extensions {
+                if extensions.contains(url.pathExtension.lowercased()) {
+                    results.append(url)
+                }
+            } else {
+                results.append(url)
+            }
+        }
+        
+        return results
+    }
+    
+    // MARK: - Write Operations
+    
+    /// Write data to a file with bookmark access
+    func writeData(_ data: Data, to url: URL) throws {
+        let directory = url.deletingLastPathComponent()
+        
+        // Try direct access first
+        if startAccessing(directory) {
+            defer { stopAccessing(directory) }
+            try data.write(to: url)
+            return
+        }
+        
+        // Try resolved bookmark
+        if let resolvedDir = resolveBookmark(for: directory.path) {
+            if startAccessing(resolvedDir) {
+                defer { stopAccessing(resolvedDir) }
+                let resolvedURL = resolvedDir.appendingPathComponent(url.lastPathComponent)
+                try data.write(to: resolvedURL)
+                return
+            }
+        }
+        
+        throw SecurityBookmarkError.accessDenied(url.path)
+    }
+    
+    /// Write string to a file with bookmark access
+    func writeFile(_ content: String, to url: URL, encoding: String.Encoding = .utf8) throws {
+        guard let data = content.data(using: encoding) else {
+            throw SecurityBookmarkError.accessDenied("Failed to encode content")
+        }
+        try writeData(data, to: url)
+    }
+    
+    /// Check if we have write access to a path
+    func hasWriteAccess(to path: String) -> Bool {
+        let url = URL(fileURLWithPath: path)
+        let directory = url.deletingLastPathComponent()
+        
+        // Try direct access
+        if startAccessing(directory) {
+            stopAccessing(directory)
+            return FileManager.default.isWritableFile(atPath: directory.path)
+        }
+        
+        // Try resolved bookmark
+        if let resolvedDir = resolveBookmark(for: directory.path) {
+            if startAccessing(resolvedDir) {
+                stopAccessing(resolvedDir)
+                return FileManager.default.isWritableFile(atPath: resolvedDir.path)
+            }
+        }
+        
+        return false
+    }
+    
+    /// Check if we have any access (read or write) to a path
+    func hasAccess(to path: String) -> Bool {
+        let url = URL(fileURLWithPath: path)
+        
+        // Try direct access
+        if startAccessing(url) {
+            stopAccessing(url)
+            return true
+        }
+        
+        // Try parent directory
+        let parent = url.deletingLastPathComponent()
+        if startAccessing(parent) {
+            stopAccessing(parent)
+            return true
+        }
+        
+        // Try resolved bookmark for path
+        if let resolved = resolveBookmark(for: path) {
+            if startAccessing(resolved) {
+                stopAccessing(resolved)
+                return true
+            }
+        }
+        
+        // Try resolved bookmark for parent
+        if let resolvedParent = resolveBookmark(for: parent.path) {
+            if startAccessing(resolvedParent) {
+                stopAccessing(resolvedParent)
+                return true
+            }
+        }
+        
+        return false
+    }
+    
     // MARK: - Bookmark Storage
     
     private func loadBookmarks() -> [String: Data] {

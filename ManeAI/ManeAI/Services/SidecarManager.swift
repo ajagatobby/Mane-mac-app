@@ -107,15 +107,18 @@ class SidecarManager: ObservableObject {
         healthCheckTimer?.invalidate()
         healthCheckTimer = nil
         
-        if let process = process, process.isRunning {
-            process.terminate()
+        if let currentProcess = process, currentProcess.isRunning {
+            currentProcess.terminate()
             
             // Give it time to clean up
-            DispatchQueue.global().asyncAfter(deadline: .now() + 1) { [weak self] in
-                if process.isRunning {
-                    process.interrupt()
+            Task {
+                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                if currentProcess.isRunning {
+                    currentProcess.interrupt()
                 }
-                self?.process = nil
+                await MainActor.run {
+                    self.process = nil
+                }
             }
         }
         

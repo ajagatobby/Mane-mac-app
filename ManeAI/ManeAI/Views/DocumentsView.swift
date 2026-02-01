@@ -20,6 +20,7 @@ struct DocumentsView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var filterMediaType: MediaType? = nil
+    @State private var importProgress: (current: Int, total: Int)? = nil
     
     // Supported file types for multimodal ingestion
     private let supportedTypes: [UTType] = [
@@ -88,18 +89,40 @@ struct DocumentsView: View {
                     )
                 }
                 
-                Button {
-                    Task {
-                        await importFiles()
+                Menu {
+                    Button {
+                        Task {
+                            await importFiles()
+                        }
+                    } label: {
+                        Label("Import Files...", systemImage: "doc.badge.plus")
+                    }
+                    
+                    Button {
+                        Task {
+                            await importFolder()
+                        }
+                    } label: {
+                        Label("Import Folder...", systemImage: "folder.badge.plus")
                     }
                 } label: {
-                    Label("Import Files", systemImage: "plus")
+                    Label("Import", systemImage: "plus")
                 }
-                .help("Import files to your knowledge base")
+                .help("Import files or folder to your knowledge base")
                 
                 if isLoading {
-                    ProgressView()
-                        .scaleEffect(0.7)
+                    if let progress = importProgress {
+                        HStack(spacing: 4) {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                            Text("\(progress.current)/\(progress.total)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                    }
                 }
             }
         }
@@ -123,14 +146,26 @@ struct DocumentsView: View {
                 ContentUnavailableView {
                     Label("No Documents", systemImage: "doc.text.magnifyingglass")
                 } description: {
-                    Text("Import files to build your knowledge base")
+                    Text("Import files or a folder to build your knowledge base")
                 } actions: {
-                    Button("Import Files") {
-                        Task {
-                            await importFiles()
+                    HStack(spacing: 12) {
+                        Button {
+                            Task {
+                                await importFiles()
+                            }
+                        } label: {
+                            Label("Import Files", systemImage: "doc.badge.plus")
                         }
+                        
+                        Button {
+                            Task {
+                                await importFolder()
+                            }
+                        } label: {
+                            Label("Import Folder", systemImage: "folder.badge.plus")
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
-                    .buttonStyle(.borderedProminent)
                 }
             } else {
                 ForEach(filteredDocuments) { document in
@@ -158,26 +193,69 @@ struct DocumentsView: View {
         .listStyle(.inset)
     }
     
+    // Supported file extensions for import
+    private static let supportedExtensions = [
+        // Text files
+        "txt", "md", "swift", "ts", "js", "py", "json", "yaml", "yml", "xml", "html", "css", "csv",
+        // Images
+        "png", "jpg", "jpeg", "gif", "webp", "heic",
+        // Audio
+        "mp3", "wav", "m4a", "aiff", "flac", "ogg"
+    ]
+    
     private func importFiles() async {
         let urls = await SecurityBookmarks.shared.selectFiles(
-            allowedTypes: [
-                // Text files
-                "txt", "md", "swift", "ts", "js", "py", "json", "yaml", "yml", "xml", "html", "css", "csv",
-                // Images
-                "png", "jpg", "jpeg", "gif", "webp", "heic",
-                // Audio
-                "mp3", "wav", "m4a", "aiff", "flac", "ogg"
-            ],
+            allowedTypes: Self.supportedExtensions,
             allowMultiple: true,
             message: "Select files to import (text, images, audio)"
         )
         
         guard !urls.isEmpty else { return }
         
-        isLoading = true
-        defer { isLoading = false }
+        await importURLs(urls)
+    }
+    
+    private func importFolder() async {
+        guard let folderURL = await SecurityBookmarks.shared.selectDirectory(
+            message: "Select a folder to import all supported files"
+        ) else { return }
         
-        for url in urls {
+        isLoading = true
+        
+        do {
+            // Get all supported files recursively
+            let urls = try SecurityBookmarks.shared.listFilesRecursively(
+                in: folderURL,
+                extensions: Self.supportedExtensions
+            )
+            
+            if urls.isEmpty {
+                errorMessage = "No supported files found in the selected folder"
+                isLoading = false
+                return
+            }
+            
+            await importURLs(urls)
+        } catch {
+            errorMessage = "Failed to read folder: \(error.localizedDescription)"
+            isLoading = false
+        }
+    }
+    
+    private func importURLs(_ urls: [URL]) async {
+        isLoading = true
+        importProgress = (current: 0, total: urls.count)
+        defer { 
+            isLoading = false 
+            importProgress = nil
+        }
+        
+        var importedCount = 0
+        var failedCount = 0
+        
+        for (index, url) in urls.enumerated() {
+            importProgress = (current: index + 1, total: urls.count)
+            
             do {
                 let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
                 let fileSize = attributes[.size] as? Int64 ?? 0
@@ -219,13 +297,22 @@ struct DocumentsView: View {
                     mediaType: response.mediaType.rawValue
                 )
                 modelContext.insert(document)
+                importedCount += 1
                 
             } catch {
-                errorMessage = "Failed to import \(url.lastPathComponent): \(error.localizedDescription)"
+                failedCount += 1
+                print("Failed to import \(url.lastPathComponent): \(error.localizedDescription)")
             }
         }
         
         try? modelContext.save()
+        
+        // Show summary for folder imports
+        if urls.count > 1 {
+            if failedCount > 0 {
+                errorMessage = "Imported \(importedCount) files, \(failedCount) failed"
+            }
+        }
     }
     
     private func getMediaType(for url: URL) -> MediaType {
