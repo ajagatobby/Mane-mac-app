@@ -84,17 +84,28 @@ export class ProjectsService {
       let knowledgeDocument: string;
       
       if (quickMode) {
-        // Fast: Use template-based document (no LLM)
-        this.logger.log('Generating knowledge document (quick mode)...');
-        knowledgeDocument = this.generateBasicKnowledgeDocument(
+        // Fast mode with optional quick LLM summary
+        this.logger.log('Generating knowledge document (quick mode with LLM summary)...');
+        
+        // Attempt quick LLM summary with timeout (won't block if slow)
+        const quickSummary = await this.generateQuickLLMSummary(
           projectName,
           detection.type,
           manifest,
           structure,
           techStack,
         );
+        
+        knowledgeDocument = this.generateBasicKnowledgeDocument(
+          projectName,
+          detection.type,
+          manifest,
+          structure,
+          techStack,
+          quickSummary,
+        );
       } else {
-        // Slow: Use LLM analysis
+        // Slow: Use full LLM analysis
         this.logger.log('Generating knowledge document with LLM (this may take a moment)...');
         const samples = this.codebaseAnalyzer.readSampleFiles(dto.folderPath, structure);
         knowledgeDocument = await this.generateKnowledgeDocument(
@@ -165,6 +176,102 @@ export class ProjectsService {
    */
   async indexProjectWithAnalysis(dto: IndexProjectDto): Promise<IndexProjectResponseDto> {
     return this.indexProject({ ...dto, quickMode: false });
+  }
+
+  /**
+   * Generate a quick LLM summary (1-2 sentences) with timeout
+   * Falls back to null if LLM is unavailable or too slow
+   */
+  private async generateQuickLLMSummary(
+    projectName: string,
+    projectType: string,
+    manifest: any,
+    structure: any,
+    techStack: string[],
+  ): Promise<string | null> {
+    if (!this.chatModel) {
+      return null;
+    }
+
+    const timeoutMs = 8000; // 8 second timeout for quick summary
+
+    try {
+      const prompt = this.buildQuickSummaryPrompt(
+        projectName,
+        projectType,
+        manifest,
+        structure,
+        techStack,
+      );
+
+      const systemMessage = new SystemMessage(
+        `You are a software architect. Give a brief 2-3 sentence summary of what this project does based on the provided information. Be concise and factual. Do not make up information.`,
+      );
+      const humanMessage = new HumanMessage(prompt);
+
+      // Race between LLM call and timeout
+      const llmPromise = this.chatModel.invoke([systemMessage, humanMessage]);
+      const timeoutPromise = new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), timeoutMs),
+      );
+
+      const response = await Promise.race([llmPromise, timeoutPromise]);
+
+      if (!response) {
+        this.logger.log('Quick LLM summary timed out, using template only');
+        return null;
+      }
+
+      const content =
+        typeof response.content === 'string'
+          ? response.content
+          : JSON.stringify(response.content);
+
+      this.logger.log('Quick LLM summary generated successfully');
+      return content.trim();
+    } catch (error: any) {
+      this.logger.warn(`Quick LLM summary failed: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Build a minimal prompt for quick summary
+   */
+  private buildQuickSummaryPrompt(
+    projectName: string,
+    projectType: string,
+    manifest: any,
+    structure: any,
+    techStack: string[],
+  ): string {
+    let prompt = `Project: "${projectName}" (${projectType})\n`;
+    prompt += `Tech Stack: ${techStack.join(', ')}\n`;
+
+    if (manifest?.description) {
+      prompt += `Description from manifest: ${manifest.description}\n`;
+    }
+
+    if (structure.keyDirectories.length > 0) {
+      prompt += `Key directories: ${structure.keyDirectories.slice(0, 5).join(', ')}\n`;
+    }
+
+    if (structure.entryPoints.length > 0) {
+      prompt += `Entry points: ${structure.entryPoints.slice(0, 3).join(', ')}\n`;
+    }
+
+    prompt += `Files: ${structure.totalFiles}, Has tests: ${structure.hasTests}, Has docs: ${structure.hasDocumentation}\n`;
+
+    // Add top dependencies for context
+    if (manifest?.dependencies) {
+      const topDeps = Object.keys(manifest.dependencies).slice(0, 8);
+      if (topDeps.length > 0) {
+        prompt += `Key dependencies: ${topDeps.join(', ')}\n`;
+      }
+    }
+
+    prompt += `\nWhat does this project do? Summarize in 2-3 sentences.`;
+    return prompt;
   }
 
   /**
@@ -312,9 +419,16 @@ Do NOT make up information - only report what you can infer from the provided co
     manifest: any,
     structure: any,
     techStack: string[],
+    llmSummary?: string | null,
   ): string {
     let doc = `# ${projectName}\n\n`;
-    
+
+    // Add LLM-generated summary if available (high-level explanation)
+    if (llmSummary) {
+      doc += `## Summary\n`;
+      doc += `${llmSummary}\n\n`;
+    }
+
     doc += `## Overview\n`;
     doc += `A ${projectType} project`;
     if (manifest?.description) {
@@ -323,7 +437,7 @@ Do NOT make up information - only report what you can infer from the provided co
     doc += `.\n\n`;
 
     doc += `## Tech Stack\n`;
-    doc += techStack.map(t => `- ${t}`).join('\n') + '\n\n';
+    doc += techStack.map((t) => `- ${t}`).join('\n') + '\n\n';
 
     doc += `## Project Structure\n`;
     doc += `- **Total Files**: ${structure.totalFiles}\n`;
@@ -333,12 +447,15 @@ Do NOT make up information - only report what you can infer from the provided co
 
     if (structure.keyDirectories.length > 0) {
       doc += `## Key Directories\n`;
-      doc += structure.keyDirectories.map((d: string) => `- ${d}`).join('\n') + '\n\n';
+      doc +=
+        structure.keyDirectories.map((d: string) => `- ${d}`).join('\n') +
+        '\n\n';
     }
 
     if (structure.entryPoints.length > 0) {
       doc += `## Entry Points\n`;
-      doc += structure.entryPoints.map((e: string) => `- ${e}`).join('\n') + '\n\n';
+      doc +=
+        structure.entryPoints.map((e: string) => `- ${e}`).join('\n') + '\n\n';
     }
 
     // File distribution
