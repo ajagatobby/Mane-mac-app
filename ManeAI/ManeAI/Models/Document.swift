@@ -15,7 +15,7 @@ final class Document {
     var filePath: String
     var fileExtension: String
     var fileSize: Int64
-    var mediaType: String // "text", "image", "audio", "video"
+    var mediaType: String // "text", "image", "audio"
     var thumbnailPath: String?
     var ingestedAt: Date
     var metadata: [String: String]
@@ -49,8 +49,6 @@ final class Document {
             return "photo"
         case "audio":
             return "waveform"
-        case "video":
-            return "video"
         default:
             // Fall back to extension-based icons for text
             switch fileExtension.lowercased() {
@@ -85,6 +83,6 @@ final class Document {
     }
     
     var isMediaFile: Bool {
-        mediaType == "image" || mediaType == "audio" || mediaType == "video"
+        mediaType == "image" || mediaType == "audio"
     }
 }

@@ -14,14 +14,12 @@ enum MediaType: String, Codable, CaseIterable {
     case text
     case image
     case audio
-    case video
     
     var icon: String {
         switch self {
         case .text: return "doc.text"
         case .image: return "photo"
         case .audio: return "waveform"
-        case .video: return "video"
         }
     }
     
@@ -30,7 +28,6 @@ enum MediaType: String, Codable, CaseIterable {
         case .text: return "Text"
         case .image: return "Image"
         case .audio: return "Audio"
-        case .video: return "Video"
         }
     }
 }
@@ -179,7 +176,7 @@ class APIService: ObservableObject {
         return try await post(path: "/ingest", body: request)
     }
     
-    /// Ingest a media file (image, audio, video) - no content needed
+    /// Ingest a media file (image, audio) - no content needed
     func ingestMediaFile(filePath: String, mediaType: MediaType? = nil, metadata: [String: String]? = nil) async throws -> IngestResponse {
         let request = IngestRequest(content: nil, filePath: filePath, mediaType: mediaType, metadata: metadata)
         return try await post(path: "/ingest", body: request)

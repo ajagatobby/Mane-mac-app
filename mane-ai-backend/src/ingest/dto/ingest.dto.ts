@@ -1,6 +1,6 @@
 import { IsString, IsOptional, IsObject, IsEnum } from 'class-validator';
 
-export type MediaType = 'text' | 'image' | 'audio' | 'video';
+export type MediaType = 'text' | 'image' | 'audio';
 
 export class IngestDocumentDto {
   @IsOptional()
@@ -11,7 +11,7 @@ export class IngestDocumentDto {
   filePath: string;
 
   @IsOptional()
-  @IsEnum(['text', 'image', 'audio', 'video'])
+  @IsEnum(['text', 'image', 'audio'])
   mediaType?: MediaType; // Auto-detected if not provided
 
   @IsOptional()

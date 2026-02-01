@@ -28,9 +28,7 @@ struct DocumentsView: View {
         // Images
         .png, .jpeg, .gif, .webP, .heic,
         // Audio
-        .mp3, .wav, .aiff, .mpeg4Audio,
-        // Video
-        .mpeg4Movie, .quickTimeMovie, .avi, .movie
+        .mp3, .wav, .aiff, .mpeg4Audio
     ]
     
     var filteredDocuments: [Document] {
@@ -168,12 +166,10 @@ struct DocumentsView: View {
                 // Images
                 "png", "jpg", "jpeg", "gif", "webp", "heic",
                 // Audio
-                "mp3", "wav", "m4a", "aiff", "flac", "ogg",
-                // Video
-                "mp4", "mov", "avi", "mkv", "webm"
+                "mp3", "wav", "m4a", "aiff", "flac", "ogg"
             ],
             allowMultiple: true,
-            message: "Select files to import (text, images, audio, video)"
+            message: "Select files to import (text, images, audio)"
         )
         
         guard !urls.isEmpty else { return }
@@ -237,11 +233,9 @@ struct DocumentsView: View {
         
         let imageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "heic"]
         let audioExtensions = ["mp3", "wav", "m4a", "aiff", "flac", "ogg"]
-        let videoExtensions = ["mp4", "mov", "avi", "mkv", "webm"]
         
         if imageExtensions.contains(ext) { return .image }
         if audioExtensions.contains(ext) { return .audio }
-        if videoExtensions.contains(ext) { return .video }
         return .text
     }
     
@@ -311,24 +305,6 @@ struct DocumentRow: View {
                     }
                     .frame(width: 32, height: 32)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
-                } else if document.mediaType == "video", 
-                          let thumbPath = document.thumbnailPath,
-                          FileManager.default.fileExists(atPath: thumbPath) {
-                    AsyncImage(url: URL(fileURLWithPath: thumbPath)) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Image(systemName: "video")
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(width: 32, height: 32)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .overlay(
-                        Image(systemName: "play.circle.fill")
-                            .foregroundStyle(.white)
-                            .shadow(radius: 1)
-                    )
                 } else {
                     Image(systemName: document.icon)
                         .font(.title2)
@@ -422,28 +398,6 @@ struct DocumentDetailView: View {
                         }
                         .frame(maxWidth: 200, maxHeight: 200)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
-                    } else {
-                        placeholderIcon
-                    }
-                    
-                case "video":
-                    if let thumbPath = document.thumbnailPath,
-                       FileManager.default.fileExists(atPath: thumbPath) {
-                        AsyncImage(url: URL(fileURLWithPath: thumbPath)) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                        } placeholder: {
-                            ProgressView()
-                        }
-                        .frame(maxWidth: 200, maxHeight: 200)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(
-                            Image(systemName: "play.circle.fill")
-                                .font(.largeTitle)
-                                .foregroundStyle(.white)
-                                .shadow(radius: 2)
-                        )
                     } else {
                         placeholderIcon
                     }

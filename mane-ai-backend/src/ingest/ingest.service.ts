@@ -85,25 +85,7 @@ export class IngestService {
           { ...dto.metadata, mediaType: 'image' },
         );
       } else {
-        // Video files - embed with CLIP (512-dim)
-        // Store in media table
-        if (!fs.existsSync(dto.filePath)) {
-          throw new Error(`File not found: ${dto.filePath}`);
-        }
-
-        // Process video file with CLIP
-        const processed = await this.multimodalService.processFile(
-          dto.filePath,
-        );
-
-        id = await this.lanceDBService.addMediaDocument(
-          processed.content,
-          dto.filePath,
-          processed.mediaType,
-          processed.vector,
-          processed.thumbnailPath,
-          dto.metadata || {},
-        );
+        throw new Error(`Unsupported media type: ${mediaType}`);
       }
 
       return {
