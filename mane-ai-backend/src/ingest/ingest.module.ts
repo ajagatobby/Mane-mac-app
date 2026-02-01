@@ -2,9 +2,10 @@ import { Module } from '@nestjs/common';
 import { IngestController } from './ingest.controller';
 import { IngestService } from './ingest.service';
 import { LanceDBModule } from '../lancedb';
+import { MultimodalModule } from '../multimodal';
 
 @Module({
-  imports: [LanceDBModule],
+  imports: [LanceDBModule, MultimodalModule],
   controllers: [IngestController],
   providers: [IngestService],
   exports: [IngestService],

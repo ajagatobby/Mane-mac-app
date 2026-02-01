@@ -4,11 +4,15 @@ import { LanceDBService } from '../lancedb';
 import { ChatOllama } from '@langchain/ollama';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 
+type MediaType = 'text' | 'image' | 'audio' | 'video';
+
 interface ChatResponse {
   answer: string;
   sources: Array<{
     fileName: string;
     filePath: string;
+    mediaType: MediaType;
+    thumbnailPath?: string;
     relevance: number;
   }>;
 }
@@ -93,6 +97,8 @@ export class OllamaService implements OnModuleInit {
     const sources = searchResults.map((r) => ({
       fileName: r.fileName,
       filePath: r.filePath,
+      mediaType: (r.mediaType as MediaType) || 'text',
+      thumbnailPath: r.thumbnailPath,
       relevance: r.score,
     }));
 

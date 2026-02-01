@@ -1,11 +1,18 @@
-import { IsString, IsOptional, IsObject } from 'class-validator';
+import { IsString, IsOptional, IsObject, IsEnum } from 'class-validator';
+
+export type MediaType = 'text' | 'image' | 'audio' | 'video';
 
 export class IngestDocumentDto {
+  @IsOptional()
   @IsString()
-  content: string;
+  content?: string; // Optional for media files
 
   @IsString()
   filePath: string;
+
+  @IsOptional()
+  @IsEnum(['text', 'image', 'audio', 'video'])
+  mediaType?: MediaType; // Auto-detected if not provided
 
   @IsOptional()
   @IsObject()
@@ -16,6 +23,7 @@ export class IngestResponseDto {
   id: string;
   fileName: string;
   filePath: string;
+  mediaType: MediaType;
   success: boolean;
   message: string;
 }
@@ -30,6 +38,8 @@ export class DocumentListResponseDto {
     id: string;
     fileName: string;
     filePath: string;
+    mediaType: MediaType;
+    thumbnailPath?: string;
     metadata: Record<string, unknown>;
   }>;
   total: number;

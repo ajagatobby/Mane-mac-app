@@ -6,12 +6,14 @@ import { LanceDBModule } from './lancedb';
 import { OllamaModule } from './ollama';
 import { IngestModule } from './ingest';
 import { ChatModule } from './chat';
+import { MultimodalModule } from './multimodal';
 
 @Module({
   imports: [
     ConfigModule,
     LanceDBModule,
     OllamaModule,
+    MultimodalModule,
     IngestModule,
     ChatModule,
   ],

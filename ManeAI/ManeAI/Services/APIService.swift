@@ -8,11 +8,39 @@
 import Foundation
 import Combine
 
+// MARK: - Media Type
+
+enum MediaType: String, Codable, CaseIterable {
+    case text
+    case image
+    case audio
+    case video
+    
+    var icon: String {
+        switch self {
+        case .text: return "doc.text"
+        case .image: return "photo"
+        case .audio: return "waveform"
+        case .video: return "video"
+        }
+    }
+    
+    var displayName: String {
+        switch self {
+        case .text: return "Text"
+        case .image: return "Image"
+        case .audio: return "Audio"
+        case .video: return "Video"
+        }
+    }
+}
+
 // MARK: - API Models
 
 struct IngestRequest: Codable {
-    let content: String
+    let content: String?
     let filePath: String
+    let mediaType: MediaType?
     let metadata: [String: String]?
 }
 
@@ -20,6 +48,7 @@ struct IngestResponse: Codable {
     let id: String
     let fileName: String
     let filePath: String
+    let mediaType: MediaType
     let success: Bool
     let message: String
 }
@@ -38,6 +67,8 @@ struct ChatSource: Codable, Identifiable {
     var id: String { filePath }
     let fileName: String
     let filePath: String
+    let mediaType: MediaType?
+    let thumbnailPath: String?
     let relevance: Double
 }
 
@@ -51,6 +82,8 @@ struct SearchResult: Codable, Identifiable {
     let content: String
     let fileName: String
     let filePath: String
+    let mediaType: MediaType?
+    let thumbnailPath: String?
     let score: Double
 }
 
@@ -67,6 +100,8 @@ struct DocumentItem: Codable, Identifiable {
     let id: String
     let fileName: String
     let filePath: String
+    let mediaType: MediaType?
+    let thumbnailPath: String?
     let metadata: [String: String]?
 }
 
@@ -138,8 +173,14 @@ class APIService: ObservableObject {
     
     // MARK: - Ingest Endpoints
     
-    func ingestDocument(content: String, filePath: String, metadata: [String: String]? = nil) async throws -> IngestResponse {
-        let request = IngestRequest(content: content, filePath: filePath, metadata: metadata)
+    func ingestDocument(content: String? = nil, filePath: String, mediaType: MediaType? = nil, metadata: [String: String]? = nil) async throws -> IngestResponse {
+        let request = IngestRequest(content: content, filePath: filePath, mediaType: mediaType, metadata: metadata)
+        return try await post(path: "/ingest", body: request)
+    }
+    
+    /// Ingest a media file (image, audio, video) - no content needed
+    func ingestMediaFile(filePath: String, mediaType: MediaType? = nil, metadata: [String: String]? = nil) async throws -> IngestResponse {
+        let request = IngestRequest(content: nil, filePath: filePath, mediaType: mediaType, metadata: metadata)
         return try await post(path: "/ingest", body: request)
     }
     

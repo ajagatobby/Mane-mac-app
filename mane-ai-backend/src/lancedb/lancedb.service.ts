@@ -5,34 +5,58 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // Types for LanceDB
-interface DocumentRecord {
+interface TextDocumentRecord {
   id: string;
   content: string;
   filePath: string;
   fileName: string;
-  metadata: string; // JSON string to avoid schema issues
+  mediaType: string;
+  metadata: string; // JSON string
   vector: number[];
   createdAt: string;
-  [key: string]: unknown; // Index signature for LanceDB compatibility
+  [key: string]: unknown;
 }
 
-interface SearchResult {
+interface MediaDocumentRecord {
+  id: string;
+  content: string; // File path for media, transcript for audio
+  filePath: string;
+  fileName: string;
+  mediaType: string;
+  thumbnailPath: string;
+  metadata: string; // JSON string
+  vector: number[];
+  createdAt: string;
+  [key: string]: unknown;
+}
+
+export interface SearchResult {
   id: string;
   content: string;
   filePath: string;
   fileName: string;
-  metadata: Record<string, unknown>; // Parsed from JSON string
+  mediaType: string;
+  thumbnailPath?: string;
+  metadata: Record<string, unknown>;
   score: number;
 }
+
+export type MediaType = 'text' | 'image' | 'audio' | 'video';
 
 @Injectable()
 export class LanceDBService implements OnModuleInit {
   private readonly logger = new Logger(LanceDBService.name);
   private db: lancedb.Connection | null = null;
-  private table: lancedb.Table | null = null;
+  private textTable: lancedb.Table | null = null;
+  private mediaTable: lancedb.Table | null = null;
   private embedder: any = null;
-  private readonly tableName = 'documents';
-  private readonly embeddingDimension = 384; // all-MiniLM-L6-v2 dimension
+
+  private readonly textTableName = 'documents_text';
+  private readonly mediaTableName = 'documents_media';
+
+  // Embedding dimensions
+  readonly TEXT_DIMENSION = 384; // all-MiniLM-L6-v2
+  readonly MEDIA_DIMENSION = 512; // CLIP
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -42,7 +66,7 @@ export class LanceDBService implements OnModuleInit {
 
   private async initialize(): Promise<void> {
     try {
-      // Initialize the embedding model
+      // Initialize the embedding model for text (backward compatibility)
       this.logger.log('Loading embedding model (all-MiniLM-L6-v2)...');
       const { pipeline } = await import('@huggingface/transformers');
       this.embedder = await pipeline(
@@ -62,15 +86,8 @@ export class LanceDBService implements OnModuleInit {
       this.logger.log(`Connecting to LanceDB at: ${dbPath}`);
       this.db = await lancedb.connect(dbPath);
 
-      // Check if table exists, create if not
-      const tableNames = await this.db.tableNames();
-      if (tableNames.includes(this.tableName)) {
-        this.table = await this.db.openTable(this.tableName);
-        this.logger.log(`Opened existing table: ${this.tableName}`);
-      } else {
-        // Create table with initial schema
-        await this.createTable();
-      }
+      // Initialize tables
+      await this.initializeTables();
 
       this.logger.log('LanceDB initialized successfully');
     } catch (error) {
@@ -79,28 +96,74 @@ export class LanceDBService implements OnModuleInit {
     }
   }
 
-  private async createTable(): Promise<void> {
+  private async initializeTables(): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
-    // Create table with a sample record to establish schema
-    const sampleRecord: DocumentRecord = {
+    const tableNames = await this.db.tableNames();
+
+    // Initialize text table
+    if (tableNames.includes(this.textTableName)) {
+      this.textTable = await this.db.openTable(this.textTableName);
+      this.logger.log(`Opened existing table: ${this.textTableName}`);
+    } else {
+      await this.createTextTable();
+    }
+
+    // Initialize media table
+    if (tableNames.includes(this.mediaTableName)) {
+      this.mediaTable = await this.db.openTable(this.mediaTableName);
+      this.logger.log(`Opened existing table: ${this.mediaTableName}`);
+    } else {
+      await this.createMediaTable();
+    }
+  }
+
+  private async createTextTable(): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const sampleRecord: TextDocumentRecord = {
       id: 'init',
       content: '',
       filePath: '',
       fileName: '',
-      metadata: '{}', // JSON string
-      vector: new Array(this.embeddingDimension).fill(0),
+      mediaType: 'text',
+      metadata: '{}',
+      vector: new Array(this.TEXT_DIMENSION).fill(0),
       createdAt: new Date().toISOString(),
     };
 
-    this.table = await this.db.createTable(this.tableName, [sampleRecord]);
-
-    // Delete the sample record
-    await this.table.delete('id = "init"');
-
-    this.logger.log(`Created new table: ${this.tableName}`);
+    this.textTable = await this.db.createTable(this.textTableName, [
+      sampleRecord,
+    ]);
+    await this.textTable.delete('id = "init"');
+    this.logger.log(`Created new table: ${this.textTableName}`);
   }
 
+  private async createMediaTable(): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const sampleRecord: MediaDocumentRecord = {
+      id: 'init',
+      content: '',
+      filePath: '',
+      fileName: '',
+      mediaType: 'image',
+      thumbnailPath: '',
+      metadata: '{}',
+      vector: new Array(this.MEDIA_DIMENSION).fill(0),
+      createdAt: new Date().toISOString(),
+    };
+
+    this.mediaTable = await this.db.createTable(this.mediaTableName, [
+      sampleRecord,
+    ]);
+    await this.mediaTable.delete('id = "init"');
+    this.logger.log(`Created new table: ${this.mediaTableName}`);
+  }
+
+  /**
+   * Generate text embedding (for backward compatibility)
+   */
   async generateEmbedding(text: string): Promise<number[]> {
     if (!this.embedder) {
       throw new Error('Embedding model not initialized');
@@ -111,50 +174,104 @@ export class LanceDBService implements OnModuleInit {
       normalize: true,
     });
 
-    // Convert tensor to array
     return Array.from(output.data);
   }
 
-  async addDocument(
+  /**
+   * Add a text document
+   */
+  async addTextDocument(
     content: string,
     filePath: string,
     metadata: Record<string, unknown> = {},
+    vector?: number[],
   ): Promise<string> {
-    if (!this.table) {
-      throw new Error('Table not initialized');
+    if (!this.textTable) {
+      throw new Error('Text table not initialized');
     }
 
     const id = this.generateId();
     const fileName = path.basename(filePath);
 
-    this.logger.log(`Generating embedding for document: ${fileName}`);
-    const vector = await this.generateEmbedding(content);
+    this.logger.log(`Adding text document: ${fileName}`);
+    const docVector = vector || (await this.generateEmbedding(content));
 
-    const record: DocumentRecord = {
+    const record: TextDocumentRecord = {
       id,
       content,
       filePath,
       fileName,
-      metadata: JSON.stringify(metadata), // Serialize to JSON string
-      vector,
+      mediaType: 'text',
+      metadata: JSON.stringify(metadata),
+      vector: docVector,
       createdAt: new Date().toISOString(),
     };
 
-    await this.table.add([record]);
-    this.logger.log(`Document added: ${id} (${fileName})`);
+    await this.textTable.add([record]);
+    this.logger.log(`Text document added: ${id} (${fileName})`);
 
     return id;
   }
 
-  async search(query: string, limit: number = 5): Promise<SearchResult[]> {
-    if (!this.table) {
-      throw new Error('Table not initialized');
+  /**
+   * Add a media document (image, audio, video)
+   */
+  async addMediaDocument(
+    content: string,
+    filePath: string,
+    mediaType: MediaType,
+    vector: number[],
+    thumbnailPath?: string,
+    metadata: Record<string, unknown> = {},
+  ): Promise<string> {
+    if (!this.mediaTable) {
+      throw new Error('Media table not initialized');
     }
 
-    this.logger.log(`Searching for: "${query.substring(0, 50)}..."`);
-    const queryVector = await this.generateEmbedding(query);
+    const id = this.generateId();
+    const fileName = path.basename(filePath);
 
-    const results = await this.table
+    this.logger.log(`Adding ${mediaType} document: ${fileName}`);
+
+    const record: MediaDocumentRecord = {
+      id,
+      content,
+      filePath,
+      fileName,
+      mediaType,
+      thumbnailPath: thumbnailPath || '',
+      metadata: JSON.stringify(metadata),
+      vector,
+      createdAt: new Date().toISOString(),
+    };
+
+    await this.mediaTable.add([record]);
+    this.logger.log(`Media document added: ${id} (${fileName})`);
+
+    return id;
+  }
+
+  /**
+   * Legacy method for backward compatibility
+   */
+  async addDocument(
+    content: string,
+    filePath: string,
+    metadata: Record<string, unknown> = {},
+  ): Promise<string> {
+    return this.addTextDocument(content, filePath, metadata);
+  }
+
+  /**
+   * Search text documents
+   */
+  async searchText(query: string, limit: number = 5): Promise<SearchResult[]> {
+    if (!this.textTable) {
+      throw new Error('Text table not initialized');
+    }
+
+    const queryVector = await this.generateEmbedding(query);
+    const results = await this.textTable
       .vectorSearch(queryVector)
       .limit(limit)
       .toArray();
@@ -164,21 +281,56 @@ export class LanceDBService implements OnModuleInit {
       content: row.content,
       filePath: row.filePath,
       fileName: row.fileName,
+      mediaType: row.mediaType || 'text',
       metadata: this.parseMetadata(row.metadata),
       score: row._distance ? 1 - row._distance : 0,
     }));
   }
 
-  async hybridSearch(
-    query: string,
+  /**
+   * Search media documents with provided vector
+   */
+  async searchMedia(
+    queryVector: number[],
     limit: number = 5,
   ): Promise<SearchResult[]> {
-    if (!this.table) {
-      throw new Error('Table not initialized');
+    if (!this.mediaTable) {
+      throw new Error('Media table not initialized');
     }
 
-    // First, do vector search
-    const vectorResults = await this.search(query, limit * 2);
+    const results = await this.mediaTable
+      .vectorSearch(queryVector)
+      .limit(limit)
+      .toArray();
+
+    return results.map((row: any) => ({
+      id: row.id,
+      content: row.content,
+      filePath: row.filePath,
+      fileName: row.fileName,
+      mediaType: row.mediaType,
+      thumbnailPath: row.thumbnailPath,
+      metadata: this.parseMetadata(row.metadata),
+      score: row._distance ? 1 - row._distance : 0,
+    }));
+  }
+
+  /**
+   * Legacy search method (text only)
+   */
+  async search(query: string, limit: number = 5): Promise<SearchResult[]> {
+    return this.searchText(query, limit);
+  }
+
+  /**
+   * Hybrid search across text documents
+   */
+  async hybridSearch(query: string, limit: number = 5): Promise<SearchResult[]> {
+    if (!this.textTable) {
+      throw new Error('Text table not initialized');
+    }
+
+    const vectorResults = await this.searchText(query, limit * 2);
 
     // Simple keyword filtering to boost relevance
     const keywords = query
@@ -206,45 +358,117 @@ export class LanceDBService implements OnModuleInit {
       };
     });
 
-    // Sort by combined score and return top results
     return scoredResults.sort((a, b) => b.score - a.score).slice(0, limit);
   }
 
-  async deleteDocument(id: string): Promise<void> {
-    if (!this.table) {
-      throw new Error('Table not initialized');
+  /**
+   * Search all documents (text + media)
+   */
+  async searchAll(
+    textQuery: string,
+    mediaVector?: number[],
+    limit: number = 5,
+  ): Promise<SearchResult[]> {
+    const results: SearchResult[] = [];
+
+    // Search text
+    const textResults = await this.searchText(textQuery, limit);
+    results.push(...textResults);
+
+    // Search media if vector provided
+    if (mediaVector && this.mediaTable) {
+      const mediaResults = await this.searchMedia(mediaVector, limit);
+      results.push(...mediaResults);
     }
 
-    await this.table.delete(`id = "${id}"`);
+    // Sort by score and return top results
+    return results.sort((a, b) => b.score - a.score).slice(0, limit);
+  }
+
+  /**
+   * Delete a document by ID
+   */
+  async deleteDocument(id: string): Promise<void> {
+    // Try to delete from both tables
+    if (this.textTable) {
+      try {
+        await this.textTable.delete(`id = "${id}"`);
+      } catch (e) {
+        // Ignore if not found in this table
+      }
+    }
+
+    if (this.mediaTable) {
+      try {
+        await this.mediaTable.delete(`id = "${id}"`);
+      } catch (e) {
+        // Ignore if not found in this table
+      }
+    }
+
     this.logger.log(`Document deleted: ${id}`);
   }
 
+  /**
+   * Get total document count
+   */
   async getDocumentCount(): Promise<number> {
-    if (!this.table) {
-      return 0;
+    let count = 0;
+
+    if (this.textTable) {
+      count += await this.textTable.countRows();
     }
 
-    const results = await this.table.countRows();
+    if (this.mediaTable) {
+      count += await this.mediaTable.countRows();
+    }
+
+    return count;
+  }
+
+  /**
+   * Get all documents
+   */
+  async getAllDocuments(): Promise<SearchResult[]> {
+    const results: SearchResult[] = [];
+
+    if (this.textTable) {
+      const textDocs = await this.textTable.query().limit(1000).toArray();
+      results.push(
+        ...textDocs.map((row: any) => ({
+          id: row.id,
+          content: row.content,
+          filePath: row.filePath,
+          fileName: row.fileName,
+          mediaType: row.mediaType || 'text',
+          metadata: this.parseMetadata(row.metadata),
+          score: 1,
+        })),
+      );
+    }
+
+    if (this.mediaTable) {
+      const mediaDocs = await this.mediaTable.query().limit(1000).toArray();
+      results.push(
+        ...mediaDocs.map((row: any) => ({
+          id: row.id,
+          content: row.content,
+          filePath: row.filePath,
+          fileName: row.fileName,
+          mediaType: row.mediaType,
+          thumbnailPath: row.thumbnailPath,
+          metadata: this.parseMetadata(row.metadata),
+          score: 1,
+        })),
+      );
+    }
+
     return results;
   }
 
-  async getAllDocuments(): Promise<SearchResult[]> {
-    if (!this.table) {
-      return [];
-    }
-
-    const results = await this.table.query().limit(1000).toArray();
-    return results.map((row: any) => ({
-      id: row.id,
-      content: row.content,
-      filePath: row.filePath,
-      fileName: row.fileName,
-      metadata: this.parseMetadata(row.metadata),
-      score: 1,
-    }));
-  }
-
-  private parseMetadata(metadata: string | Record<string, unknown>): Record<string, unknown> {
+  private parseMetadata(
+    metadata: string | Record<string, unknown>,
+  ): Record<string, unknown> {
     if (typeof metadata === 'string') {
       try {
         return JSON.parse(metadata);

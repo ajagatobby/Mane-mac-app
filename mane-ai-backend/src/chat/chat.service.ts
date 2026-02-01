@@ -43,9 +43,14 @@ export class ChatService {
     return {
       results: results.map((r) => ({
         id: r.id,
-        content: r.content.substring(0, 500), // Truncate for response
+        content:
+          r.mediaType === 'text' || r.mediaType === 'audio'
+            ? r.content.substring(0, 500)
+            : r.content, // Don't truncate file paths
         fileName: r.fileName,
         filePath: r.filePath,
+        mediaType: (r.mediaType as any) || 'text',
+        thumbnailPath: r.thumbnailPath,
         score: r.score,
       })),
     };

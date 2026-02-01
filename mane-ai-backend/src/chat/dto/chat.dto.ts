@@ -1,5 +1,7 @@
 import { IsString, IsOptional, IsBoolean } from 'class-validator';
 
+export type MediaType = 'text' | 'image' | 'audio' | 'video';
+
 export class ChatQueryDto {
   @IsString()
   query: string;
@@ -14,6 +16,8 @@ export class ChatResponseDto {
   sources: Array<{
     fileName: string;
     filePath: string;
+    mediaType: MediaType;
+    thumbnailPath?: string;
     relevance: number;
   }>;
 }
@@ -32,6 +36,8 @@ export class SearchResponseDto {
     content: string;
     fileName: string;
     filePath: string;
+    mediaType: MediaType;
+    thumbnailPath?: string;
     score: number;
   }>;
 }

@@ -2,7 +2,7 @@
 //  Document.swift
 //  ManeAI
 //
-//  Document model for ingested files
+//  Document model for ingested files with multimodal support
 //
 
 import Foundation
@@ -15,6 +15,8 @@ final class Document {
     var filePath: String
     var fileExtension: String
     var fileSize: Int64
+    var mediaType: String // "text", "image", "audio", "video"
+    var thumbnailPath: String?
     var ingestedAt: Date
     var metadata: [String: String]
     
@@ -24,6 +26,8 @@ final class Document {
         filePath: String,
         fileExtension: String = "",
         fileSize: Int64 = 0,
+        mediaType: String = "text",
+        thumbnailPath: String? = nil,
         ingestedAt: Date = Date(),
         metadata: [String: String] = [:]
     ) {
@@ -32,24 +36,39 @@ final class Document {
         self.filePath = filePath
         self.fileExtension = fileExtension
         self.fileSize = fileSize
+        self.mediaType = mediaType
+        self.thumbnailPath = thumbnailPath
         self.ingestedAt = ingestedAt
         self.metadata = metadata
     }
     
     var icon: String {
-        switch fileExtension.lowercased() {
-        case "txt", "md", "markdown":
-            return "doc.text"
-        case "pdf":
-            return "doc.richtext"
-        case "swift", "ts", "js", "py", "java", "cpp", "c", "h":
-            return "chevron.left.forwardslash.chevron.right"
-        case "json", "xml", "yaml", "yml":
-            return "curlybraces"
-        case "html", "css":
-            return "globe"
+        // First check media type
+        switch mediaType {
+        case "image":
+            return "photo"
+        case "audio":
+            return "waveform"
+        case "video":
+            return "video"
         default:
-            return "doc"
+            // Fall back to extension-based icons for text
+            switch fileExtension.lowercased() {
+            case "txt", "md", "markdown":
+                return "doc.text"
+            case "pdf":
+                return "doc.richtext"
+            case "swift", "ts", "js", "py", "java", "cpp", "c", "h":
+                return "chevron.left.forwardslash.chevron.right"
+            case "json", "xml", "yaml", "yml":
+                return "curlybraces"
+            case "html", "css":
+                return "globe"
+            case "csv":
+                return "tablecells"
+            default:
+                return "doc"
+            }
         }
     }
     
@@ -63,5 +82,9 @@ final class Document {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: ingestedAt, relativeTo: Date())
+    }
+    
+    var isMediaFile: Bool {
+        mediaType == "image" || mediaType == "audio" || mediaType == "video"
     }
 }

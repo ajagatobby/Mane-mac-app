@@ -2,11 +2,12 @@
 //  DocumentsView.swift
 //  ManeAI
 //
-//  Document list and management view
+//  Document list and management view with multimodal support
 //
 
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct DocumentsView: View {
     @EnvironmentObject var apiService: APIService
@@ -18,15 +19,37 @@ struct DocumentsView: View {
     @State private var selectedDocument: Document?
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var filterMediaType: MediaType? = nil
+    
+    // Supported file types for multimodal ingestion
+    private let supportedTypes: [UTType] = [
+        // Text
+        .plainText, .utf8PlainText, .sourceCode, .json, .xml, .yaml,
+        // Images
+        .png, .jpeg, .gif, .webP, .heic,
+        // Audio
+        .mp3, .wav, .aiff, .mpeg4Audio,
+        // Video
+        .mpeg4Movie, .quickTimeMovie, .avi, .movie
+    ]
     
     var filteredDocuments: [Document] {
-        if searchText.isEmpty {
-            return documents
+        var result = documents
+        
+        // Filter by search text
+        if !searchText.isEmpty {
+            result = result.filter { doc in
+                doc.fileName.localizedCaseInsensitiveContains(searchText) ||
+                doc.filePath.localizedCaseInsensitiveContains(searchText)
+            }
         }
-        return documents.filter { doc in
-            doc.fileName.localizedCaseInsensitiveContains(searchText) ||
-            doc.filePath.localizedCaseInsensitiveContains(searchText)
+        
+        // Filter by media type
+        if let mediaType = filterMediaType {
+            result = result.filter { $0.mediaType == mediaType.rawValue }
         }
+        
+        return result
     }
     
     var body: some View {
@@ -47,6 +70,26 @@ struct DocumentsView: View {
         .searchable(text: $searchText, prompt: "Search documents")
         .toolbar {
             ToolbarItemGroup {
+                // Media type filter
+                Menu {
+                    Button("All Types") {
+                        filterMediaType = nil
+                    }
+                    Divider()
+                    ForEach(MediaType.allCases, id: \.self) { type in
+                        Button {
+                            filterMediaType = type
+                        } label: {
+                            Label(type.displayName, systemImage: type.icon)
+                        }
+                    }
+                } label: {
+                    Label(
+                        filterMediaType?.displayName ?? "Filter",
+                        systemImage: filterMediaType?.icon ?? "line.3.horizontal.decrease.circle"
+                    )
+                }
+                
                 Button {
                     Task {
                         await importFiles()
@@ -119,9 +162,18 @@ struct DocumentsView: View {
     
     private func importFiles() async {
         let urls = await SecurityBookmarks.shared.selectFiles(
-            allowedTypes: ["txt", "md", "swift", "ts", "js", "py", "json", "yaml", "yml", "xml", "html", "css"],
+            allowedTypes: [
+                // Text files
+                "txt", "md", "swift", "ts", "js", "py", "json", "yaml", "yml", "xml", "html", "css", "csv",
+                // Images
+                "png", "jpg", "jpeg", "gif", "webp", "heic",
+                // Audio
+                "mp3", "wav", "m4a", "aiff", "flac", "ogg",
+                // Video
+                "mp4", "mov", "avi", "mkv", "webm"
+            ],
             allowMultiple: true,
-            message: "Select files to import into your knowledge base"
+            message: "Select files to import (text, images, audio, video)"
         )
         
         guard !urls.isEmpty else { return }
@@ -131,18 +183,35 @@ struct DocumentsView: View {
         
         for url in urls {
             do {
-                let content = try SecurityBookmarks.shared.readFile(at: url)
                 let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
                 let fileSize = attributes[.size] as? Int64 ?? 0
+                let mediaType = getMediaType(for: url)
                 
-                let response = try await apiService.ingestDocument(
-                    content: content,
-                    filePath: url.path,
-                    metadata: [
-                        "extension": url.pathExtension,
-                        "importedAt": ISO8601DateFormatter().string(from: Date())
-                    ]
-                )
+                let response: IngestResponse
+                
+                if mediaType == .text {
+                    // Text files - read content
+                    let content = try SecurityBookmarks.shared.readFile(at: url)
+                    response = try await apiService.ingestDocument(
+                        content: content,
+                        filePath: url.path,
+                        mediaType: mediaType,
+                        metadata: [
+                            "extension": url.pathExtension,
+                            "importedAt": ISO8601DateFormatter().string(from: Date())
+                        ]
+                    )
+                } else {
+                    // Media files - just pass the path
+                    response = try await apiService.ingestMediaFile(
+                        filePath: url.path,
+                        mediaType: mediaType,
+                        metadata: [
+                            "extension": url.pathExtension,
+                            "importedAt": ISO8601DateFormatter().string(from: Date())
+                        ]
+                    )
+                }
                 
                 // Save to local SwiftData
                 let document = Document(
@@ -150,7 +219,8 @@ struct DocumentsView: View {
                     fileName: response.fileName,
                     filePath: response.filePath,
                     fileExtension: url.pathExtension,
-                    fileSize: fileSize
+                    fileSize: fileSize,
+                    mediaType: response.mediaType.rawValue
                 )
                 modelContext.insert(document)
                 
@@ -160,6 +230,19 @@ struct DocumentsView: View {
         }
         
         try? modelContext.save()
+    }
+    
+    private func getMediaType(for url: URL) -> MediaType {
+        let ext = url.pathExtension.lowercased()
+        
+        let imageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "heic"]
+        let audioExtensions = ["mp3", "wav", "m4a", "aiff", "flac", "ogg"]
+        let videoExtensions = ["mp4", "mov", "avi", "mkv", "webm"]
+        
+        if imageExtensions.contains(ext) { return .image }
+        if audioExtensions.contains(ext) { return .audio }
+        if videoExtensions.contains(ext) { return .video }
+        return .text
     }
     
     private func deleteDocument(_ document: Document) async {
@@ -191,7 +274,9 @@ struct DocumentsView: View {
                     id: doc.id,
                     fileName: doc.fileName,
                     filePath: doc.filePath,
-                    fileExtension: URL(fileURLWithPath: doc.filePath).pathExtension
+                    fileExtension: URL(fileURLWithPath: doc.filePath).pathExtension,
+                    mediaType: doc.mediaType?.rawValue ?? "text",
+                    thumbnailPath: doc.thumbnailPath
                 )
                 modelContext.insert(document)
             }
@@ -213,10 +298,44 @@ struct DocumentRow: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: document.icon)
-                .font(.title2)
-                .foregroundStyle(.secondary)
-                .frame(width: 32)
+            // Media type icon or thumbnail
+            Group {
+                if document.mediaType == "image", FileManager.default.fileExists(atPath: document.filePath) {
+                    AsyncImage(url: URL(fileURLWithPath: document.filePath)) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Image(systemName: "photo")
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(width: 32, height: 32)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                } else if document.mediaType == "video", 
+                          let thumbPath = document.thumbnailPath,
+                          FileManager.default.fileExists(atPath: thumbPath) {
+                    AsyncImage(url: URL(fileURLWithPath: thumbPath)) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Image(systemName: "video")
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(width: 32, height: 32)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .overlay(
+                        Image(systemName: "play.circle.fill")
+                            .foregroundStyle(.white)
+                            .shadow(radius: 1)
+                    )
+                } else {
+                    Image(systemName: document.icon)
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 32, height: 32)
+                }
+            }
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(document.fileName)
@@ -224,6 +343,16 @@ struct DocumentRow: View {
                     .lineLimit(1)
                 
                 HStack(spacing: 8) {
+                    // Media type badge
+                    if let mediaType = MediaType(rawValue: document.mediaType) {
+                        Label(mediaType.displayName, systemImage: mediaType.icon)
+                            .font(.caption2)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(.quaternary)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                    }
+                    
                     Text(document.formattedSize)
                     Text("•")
                     Text(document.formattedDate)
@@ -244,23 +373,8 @@ struct DocumentDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                // Header
-                HStack(spacing: 16) {
-                    Image(systemName: document.icon)
-                        .font(.largeTitle)
-                        .foregroundStyle(.blue)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(document.fileName)
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                        
-                        Text(document.filePath)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                }
+                // Header with preview
+                mediaPreview
                 
                 Divider()
                 
@@ -270,15 +384,107 @@ struct DocumentDetailView: View {
                     GridItem(.flexible())
                 ], spacing: 16) {
                     DetailItem(title: "Size", value: document.formattedSize)
-                    DetailItem(title: "Type", value: document.fileExtension.uppercased())
+                    DetailItem(title: "Type", value: MediaType(rawValue: document.mediaType)?.displayName ?? document.fileExtension.uppercased())
                     DetailItem(title: "Ingested", value: document.formattedDate)
                     DetailItem(title: "ID", value: String(document.id.prefix(12)) + "...")
+                }
+                
+                // File path
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Path")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(document.filePath)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
                 }
                 
                 Spacer()
             }
             .padding()
         }
+    }
+    
+    @ViewBuilder
+    private var mediaPreview: some View {
+        HStack(spacing: 16) {
+            // Preview based on media type
+            Group {
+                switch document.mediaType {
+                case "image":
+                    if FileManager.default.fileExists(atPath: document.filePath) {
+                        AsyncImage(url: URL(fileURLWithPath: document.filePath)) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                        } placeholder: {
+                            ProgressView()
+                        }
+                        .frame(maxWidth: 200, maxHeight: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    } else {
+                        placeholderIcon
+                    }
+                    
+                case "video":
+                    if let thumbPath = document.thumbnailPath,
+                       FileManager.default.fileExists(atPath: thumbPath) {
+                        AsyncImage(url: URL(fileURLWithPath: thumbPath)) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                        } placeholder: {
+                            ProgressView()
+                        }
+                        .frame(maxWidth: 200, maxHeight: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            Image(systemName: "play.circle.fill")
+                                .font(.largeTitle)
+                                .foregroundStyle(.white)
+                                .shadow(radius: 2)
+                        )
+                    } else {
+                        placeholderIcon
+                    }
+                    
+                case "audio":
+                    VStack {
+                        Image(systemName: "waveform.circle.fill")
+                            .font(.system(size: 60))
+                            .foregroundStyle(.purple)
+                        Text("Audio File")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(width: 100, height: 100)
+                    
+                default:
+                    placeholderIcon
+                }
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(document.fileName)
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                
+                if let mediaType = MediaType(rawValue: document.mediaType) {
+                    Label(mediaType.displayName, systemImage: mediaType.icon)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            Spacer()
+        }
+    }
+    
+    private var placeholderIcon: some View {
+        Image(systemName: document.icon)
+            .font(.system(size: 48))
+            .foregroundStyle(.blue)
+            .frame(width: 80, height: 80)
     }
 }
 
