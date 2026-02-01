@@ -194,9 +194,84 @@ const ENTRY_POINT_PATTERNS = [
   'main.cpp',
 ];
 
+export interface DiscoveredCodebase {
+  path: string;
+  name: string;
+  type: string;
+  techStack: string[];
+}
+
 @Injectable()
 export class CodebaseAnalyzerService {
   private readonly logger = new Logger(CodebaseAnalyzerService.name);
+
+  /**
+   * Scan a directory recursively to find all codebases
+   * @param rootPath - The root directory to scan
+   * @param maxDepth - Maximum depth to search (default: 3)
+   * @returns Array of discovered codebases
+   */
+  discoverCodebases(rootPath: string, maxDepth: number = 3): DiscoveredCodebase[] {
+    const codebases: DiscoveredCodebase[] = [];
+    
+    if (!fs.existsSync(rootPath)) {
+      return codebases;
+    }
+
+    const stats = fs.statSync(rootPath);
+    if (!stats.isDirectory()) {
+      return codebases;
+    }
+
+    this.scanForCodebases(rootPath, rootPath, codebases, 0, maxDepth);
+    
+    this.logger.log(`Discovered ${codebases.length} codebases in ${rootPath}`);
+    return codebases;
+  }
+
+  private scanForCodebases(
+    rootPath: string,
+    currentPath: string,
+    codebases: DiscoveredCodebase[],
+    depth: number,
+    maxDepth: number,
+  ): void {
+    if (depth > maxDepth) return;
+
+    // Check if current directory is a codebase
+    const detection = this.detectCodebase(currentPath);
+    if (detection) {
+      codebases.push({
+        path: currentPath,
+        name: path.basename(currentPath),
+        type: detection.type,
+        techStack: detection.techStack,
+      });
+      // Don't recurse into detected codebases (they're already found)
+      return;
+    }
+
+    // Scan subdirectories
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(currentPath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      
+      // Skip ignored directories
+      if (IGNORED_DIRECTORIES.has(entry.name)) continue;
+      
+      // Skip hidden directories
+      if (entry.name.startsWith('.')) continue;
+
+      const fullPath = path.join(currentPath, entry.name);
+      this.scanForCodebases(rootPath, fullPath, codebases, depth + 1, maxDepth);
+    }
+  }
 
   /**
    * Detect if a folder contains a codebase by looking for manifest files

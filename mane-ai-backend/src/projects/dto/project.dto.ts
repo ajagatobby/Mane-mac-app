@@ -77,3 +77,35 @@ export interface IndexProjectResponseDto {
   message: string;
   project?: ProjectResponseDto;
 }
+
+export class ScanDirectoryDto {
+  @IsString()
+  folderPath: string;
+
+  @IsOptional()
+  @IsNumber()
+  maxDepth?: number; // Maximum depth to search (default: 3)
+}
+
+export interface DiscoveredCodebaseDto {
+  path: string;
+  name: string;
+  type: string;
+  techStack: string[];
+}
+
+export interface ScanDirectoryResponseDto {
+  success: boolean;
+  message: string;
+  codebases: DiscoveredCodebaseDto[];
+  total: number;
+}
+
+export interface BatchIndexResponseDto {
+  success: boolean;
+  message: string;
+  indexed: number;
+  failed: number;
+  projects: ProjectResponseDto[];
+  errors: Array<{ path: string; error: string }>;
+}

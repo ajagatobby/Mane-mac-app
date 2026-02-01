@@ -157,6 +157,47 @@ struct SearchProjectsRequest: Codable {
     let limit: Int?
 }
 
+struct ScanDirectoryRequest: Codable {
+    let folderPath: String
+    let maxDepth: Int?
+}
+
+struct DiscoveredCodebase: Codable, Identifiable {
+    let path: String
+    let name: String
+    let type: String
+    let techStack: [String]
+    
+    var id: String { path }
+}
+
+struct ScanDirectoryResponse: Codable {
+    let success: Bool
+    let message: String
+    let codebases: [DiscoveredCodebase]
+    let total: Int
+}
+
+struct ScanAndIndexRequest: Codable {
+    let folderPath: String
+    let maxDepth: Int?
+    let quickMode: Bool?
+}
+
+struct BatchIndexResponse: Codable {
+    let success: Bool
+    let message: String
+    let indexed: Int
+    let failed: Int
+    let projects: [ProjectItem]
+    let errors: [BatchIndexError]
+}
+
+struct BatchIndexError: Codable {
+    let path: String
+    let error: String
+}
+
 // MARK: - Generic Response
 
 struct SuccessResponse: Codable {
@@ -370,6 +411,18 @@ class APIService: ObservableObject {
     func searchProjects(query: String, limit: Int = 10) async throws -> [ProjectItem] {
         let request = SearchProjectsRequest(query: query, limit: limit)
         return try await post(path: "/projects/search", body: request)
+    }
+    
+    /// Scan a directory to discover all codebases
+    func scanDirectory(folderPath: String, maxDepth: Int = 3) async throws -> ScanDirectoryResponse {
+        let request = ScanDirectoryRequest(folderPath: folderPath, maxDepth: maxDepth)
+        return try await post(path: "/projects/scan", body: request)
+    }
+    
+    /// Scan a directory and index all discovered codebases
+    func scanAndIndexAll(folderPath: String, maxDepth: Int = 3, quickMode: Bool = true) async throws -> BatchIndexResponse {
+        let request = ScanAndIndexRequest(folderPath: folderPath, maxDepth: maxDepth, quickMode: quickMode)
+        return try await post(path: "/projects/scan-and-index", body: request)
     }
     
     // MARK: - Private HTTP Methods

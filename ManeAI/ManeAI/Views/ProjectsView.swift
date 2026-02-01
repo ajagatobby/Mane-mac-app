@@ -51,14 +51,26 @@ struct ProjectsView: View {
         .searchable(text: $searchText, prompt: "Search projects")
         .toolbar {
             ToolbarItemGroup {
-                Button {
-                    Task {
-                        await indexFolder()
+                Menu {
+                    Button {
+                        Task {
+                            await indexFolder()
+                        }
+                    } label: {
+                        Label("Index Single Project", systemImage: "folder.badge.plus")
+                    }
+                    
+                    Button {
+                        Task {
+                            await scanAndIndexDirectory()
+                        }
+                    } label: {
+                        Label("Scan Directory for Projects", systemImage: "folder.badge.questionmark")
                     }
                 } label: {
-                    Label("Index Project", systemImage: "folder.badge.plus")
+                    Label("Add Projects", systemImage: "plus")
                 }
-                .help("Select a codebase folder to analyze and index")
+                .help("Add projects to your knowledge base")
                 
                 if !projects.isEmpty {
                     Button(role: .destructive) {
@@ -116,16 +128,26 @@ struct ProjectsView: View {
                 ContentUnavailableView {
                     Label("No Projects", systemImage: "folder.badge.gearshape")
                 } description: {
-                    Text("Index a codebase folder to analyze and search your projects")
+                    Text("Index codebases to analyze and search your projects")
                 } actions: {
-                    Button {
-                        Task {
-                            await indexFolder()
+                    VStack(spacing: 12) {
+                        Button {
+                            Task {
+                                await scanAndIndexDirectory()
+                            }
+                        } label: {
+                            Label("Scan Directory", systemImage: "folder.badge.questionmark")
                         }
-                    } label: {
-                        Label("Index Project", systemImage: "folder.badge.plus")
+                        .buttonStyle(.borderedProminent)
+                        
+                        Button {
+                            Task {
+                                await indexFolder()
+                            }
+                        } label: {
+                            Label("Index Single Project", systemImage: "folder.badge.plus")
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
                 }
             } else {
                 ForEach(filteredProjects) { project in
@@ -216,6 +238,73 @@ struct ProjectsView: View {
             }
         } catch {
             errorMessage = "Failed to index project: \(error.localizedDescription)"
+        }
+        
+        isIndexing = false
+        indexingStatus = nil
+    }
+    
+    private func scanAndIndexDirectory() async {
+        guard let folderURL = await SecurityBookmarks.shared.selectDirectory(
+            message: "Select a directory to scan for codebases"
+        ) else { return }
+        
+        isIndexing = true
+        indexingStatus = "Scanning for codebases..."
+        
+        do {
+            // First scan to show how many were found
+            let scanResult = try await apiService.scanDirectory(folderPath: folderURL.path)
+            
+            guard scanResult.success && scanResult.total > 0 else {
+                errorMessage = scanResult.total == 0 
+                    ? "No codebases found in the selected directory"
+                    : scanResult.message
+                isIndexing = false
+                indexingStatus = nil
+                return
+            }
+            
+            indexingStatus = "Found \(scanResult.total) project(s), indexing..."
+            
+            // Index all discovered codebases
+            let response = try await apiService.scanAndIndexAll(folderPath: folderURL.path)
+            
+            if response.success {
+                // Save all indexed projects to local SwiftData
+                for projectItem in response.projects {
+                    // Check if project already exists locally
+                    let existingIds = Set(projects.map { $0.id })
+                    if !existingIds.contains(projectItem.id) {
+                        let project = Project(
+                            id: projectItem.id,
+                            name: projectItem.name,
+                            path: projectItem.path,
+                            projectDescription: projectItem.description,
+                            techStack: projectItem.techStack,
+                            tags: projectItem.tags,
+                            fileCount: projectItem.fileCount,
+                            knowledgeDocument: projectItem.knowledgeDocument
+                        )
+                        modelContext.insert(project)
+                    }
+                }
+                try? modelContext.save()
+                
+                // Select the first project if any were indexed
+                if let firstProject = response.projects.first {
+                    selectedProject = projects.first { $0.id == firstProject.id }
+                }
+                
+                // Show success message
+                if response.failed > 0 {
+                    errorMessage = "Indexed \(response.indexed) project(s), \(response.failed) failed"
+                }
+            } else {
+                errorMessage = response.message
+            }
+        } catch {
+            errorMessage = "Failed to scan directory: \(error.localizedDescription)"
         }
         
         isIndexing = false

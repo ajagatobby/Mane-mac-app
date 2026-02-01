@@ -460,4 +460,109 @@ Do NOT make up information - only report what you can infer from the provided co
       techStack: detection.techStack,
     };
   }
+
+  /**
+   * Scan a directory to discover all codebases
+   */
+  scanDirectory(folderPath: string, maxDepth: number = 3): {
+    success: boolean;
+    message: string;
+    codebases: Array<{ path: string; name: string; type: string; techStack: string[] }>;
+    total: number;
+  } {
+    try {
+      this.logger.log(`Scanning directory for codebases: ${folderPath}`);
+      const codebases = this.codebaseAnalyzer.discoverCodebases(folderPath, maxDepth);
+      
+      return {
+        success: true,
+        message: `Found ${codebases.length} codebase(s) in ${folderPath}`,
+        codebases,
+        total: codebases.length,
+      };
+    } catch (error: any) {
+      this.logger.error(`Failed to scan directory: ${error.message}`);
+      return {
+        success: false,
+        message: `Failed to scan directory: ${error.message}`,
+        codebases: [],
+        total: 0,
+      };
+    }
+  }
+
+  /**
+   * Scan a directory and index all discovered codebases
+   */
+  async scanAndIndexAll(
+    folderPath: string,
+    maxDepth: number = 3,
+    quickMode: boolean = true,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    indexed: number;
+    failed: number;
+    projects: ProjectResponseDto[];
+    errors: Array<{ path: string; error: string }>;
+  }> {
+    const startTime = Date.now();
+    this.logger.log(`Scanning and indexing all codebases in: ${folderPath}`);
+
+    // First, discover all codebases
+    const scanResult = this.scanDirectory(folderPath, maxDepth);
+    
+    if (!scanResult.success || scanResult.total === 0) {
+      return {
+        success: false,
+        message: scanResult.total === 0 
+          ? 'No codebases found in the specified directory'
+          : scanResult.message,
+        indexed: 0,
+        failed: 0,
+        projects: [],
+        errors: [],
+      };
+    }
+
+    // Index each discovered codebase
+    const projects: ProjectResponseDto[] = [];
+    const errors: Array<{ path: string; error: string }> = [];
+    let indexed = 0;
+    let failed = 0;
+
+    for (const codebase of scanResult.codebases) {
+      try {
+        this.logger.log(`Indexing: ${codebase.name} (${codebase.path})`);
+        
+        const result = await this.indexProject({
+          folderPath: codebase.path,
+          quickMode,
+        });
+
+        if (result.success && result.project) {
+          projects.push(result.project);
+          indexed++;
+        } else {
+          errors.push({ path: codebase.path, error: result.message });
+          failed++;
+        }
+      } catch (error: any) {
+        errors.push({ path: codebase.path, error: error.message });
+        failed++;
+      }
+    }
+
+    const elapsed = Date.now() - startTime;
+    this.logger.log(`Batch indexing complete: ${indexed} indexed, ${failed} failed (${elapsed}ms)`);
+
+    return {
+      success: indexed > 0,
+      message: `Indexed ${indexed} project(s)${failed > 0 ? `, ${failed} failed` : ''} (${elapsed}ms)`,
+      indexed,
+      failed,
+      projects,
+      errors,
+    };
+  }
 }

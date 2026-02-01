@@ -13,9 +13,12 @@ import { ProjectsService } from './projects.service';
 import {
   IndexProjectDto,
   SearchProjectsDto,
+  ScanDirectoryDto,
   ProjectResponseDto,
   ProjectListResponseDto,
   IndexProjectResponseDto,
+  ScanDirectoryResponseDto,
+  BatchIndexResponseDto,
 } from './dto/project.dto';
 
 @Controller('projects')
@@ -97,5 +100,31 @@ export class ProjectsController {
   @Post('search')
   async searchProjects(@Body() dto: SearchProjectsDto): Promise<ProjectResponseDto[]> {
     return this.projectsService.searchProjects(dto.query, dto.limit);
+  }
+
+  /**
+   * Scan a directory to discover all codebases
+   * POST /projects/scan
+   */
+  @Post('scan')
+  async scanDirectory(@Body() dto: ScanDirectoryDto): Promise<ScanDirectoryResponseDto> {
+    this.logger.log(`Scan directory request: ${dto.folderPath}`);
+    return this.projectsService.scanDirectory(dto.folderPath, dto.maxDepth);
+  }
+
+  /**
+   * Scan a directory and index all discovered codebases
+   * POST /projects/scan-and-index
+   */
+  @Post('scan-and-index')
+  async scanAndIndexAll(
+    @Body() body: { folderPath: string; maxDepth?: number; quickMode?: boolean },
+  ): Promise<BatchIndexResponseDto> {
+    this.logger.log(`Scan and index request: ${body.folderPath}`);
+    return this.projectsService.scanAndIndexAll(
+      body.folderPath,
+      body.maxDepth ?? 3,
+      body.quickMode !== false,
+    );
   }
 }
