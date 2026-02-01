@@ -18,6 +18,7 @@ struct ManeAIApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Document.self,
+            Project.self,
             ChatMessage.self,
             ChatConversation.self,
         ])

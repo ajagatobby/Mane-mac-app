@@ -10,6 +10,7 @@ import SwiftData
 
 enum NavigationItem: Hashable {
     case documents
+    case projects
     case chat
     case settings
 }
@@ -20,6 +21,7 @@ struct SidebarView: View {
     @EnvironmentObject var apiService: APIService
     
     @State private var documentCount = 0
+    @State private var projectCount = 0
     
     var body: some View {
         List(selection: $selection) {
@@ -42,6 +44,27 @@ struct SidebarView: View {
                     } icon: {
                         Image(systemName: "folder.fill")
                             .foregroundStyle(.blue)
+                    }
+                }
+                
+                NavigationLink(value: NavigationItem.projects) {
+                    Label {
+                        HStack {
+                            Text("Projects")
+                            Spacer()
+                            if projectCount > 0 {
+                                Text("\(projectCount)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(.quaternary)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                    } icon: {
+                        Image(systemName: "folder.badge.gearshape")
+                            .foregroundStyle(.orange)
                     }
                 }
             }
@@ -74,15 +97,22 @@ struct SidebarView: View {
             }
         }
         .task {
-            await loadDocumentCount()
+            await loadCounts()
         }
     }
     
-    private func loadDocumentCount() async {
+    private func loadCounts() async {
         do {
             documentCount = try await apiService.getDocumentCount()
         } catch {
             documentCount = 0
+        }
+        
+        do {
+            let response = try await apiService.listProjects()
+            projectCount = response.total
+        } catch {
+            projectCount = 0
         }
     }
 }

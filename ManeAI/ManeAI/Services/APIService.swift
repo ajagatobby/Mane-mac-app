@@ -111,6 +111,52 @@ struct OllamaStatus: Codable {
     let url: String
 }
 
+// MARK: - Project Models
+
+struct IndexProjectRequest: Codable {
+    let folderPath: String
+    let name: String?
+    let quickMode: Bool?
+}
+
+struct IndexProjectResponse: Codable {
+    let success: Bool
+    let message: String
+    let project: ProjectItem?
+}
+
+struct ProjectItem: Codable, Identifiable {
+    let id: String
+    let name: String
+    let path: String
+    let description: String
+    let techStack: [String]
+    let tags: [String]
+    let fileCount: Int
+    let knowledgeDocument: String?
+    let createdAt: String
+}
+
+struct ProjectListResponse: Codable {
+    let projects: [ProjectItem]
+    let total: Int
+}
+
+struct DetectCodebaseRequest: Codable {
+    let folderPath: String
+}
+
+struct DetectCodebaseResponse: Codable {
+    let isCodebase: Bool
+    let type: String?
+    let techStack: [String]?
+}
+
+struct SearchProjectsRequest: Codable {
+    let query: String
+    let limit: Int?
+}
+
 // MARK: - Generic Response
 
 struct SuccessResponse: Codable {
@@ -285,49 +331,45 @@ class APIService: ObservableObject {
     
     // MARK: - Project Endpoints
     
-    func indexProject(path: String, maxDepth: Int? = nil, maxFiles: Int? = nil, skipSkeletons: Bool? = nil) async throws -> IndexProjectResponse {
-        let request = IndexProjectRequest(path: path, maxDepth: maxDepth, maxFiles: maxFiles, skipSkeletons: skipSkeletons)
+    /// Detect if a folder contains a codebase
+    func detectCodebase(folderPath: String) async throws -> DetectCodebaseResponse {
+        let request = DetectCodebaseRequest(folderPath: folderPath)
+        return try await post(path: "/projects/detect", body: request)
+    }
+    
+    /// Index a folder as a project (quick mode by default)
+    /// - Parameters:
+    ///   - quickMode: If true (default), skip LLM analysis for faster indexing
+    func indexProject(folderPath: String, name: String? = nil, quickMode: Bool = true) async throws -> IndexProjectResponse {
+        let request = IndexProjectRequest(folderPath: folderPath, name: name, quickMode: quickMode)
         return try await post(path: "/projects/index", body: request)
     }
     
-    func reindexProject(id: String, maxDepth: Int? = nil, maxFiles: Int? = nil, skipSkeletons: Bool? = nil) async throws -> IndexProjectResponse {
-        struct ReindexRequest: Codable {
-            let maxDepth: Int?
-            let maxFiles: Int?
-            let skipSkeletons: Bool?
-        }
-        let request = ReindexRequest(maxDepth: maxDepth, maxFiles: maxFiles, skipSkeletons: skipSkeletons)
-        return try await post(path: "/projects/\(id)/reindex", body: request)
+    /// Index a folder with full LLM analysis (slower but more detailed)
+    func analyzeProject(folderPath: String, name: String? = nil) async throws -> IndexProjectResponse {
+        let request = IndexProjectRequest(folderPath: folderPath, name: name, quickMode: false)
+        return try await post(path: "/projects/analyze", body: request)
     }
     
-    func listProjects() async throws -> ListProjectsResponse {
+    /// List all indexed projects
+    func listProjects() async throws -> ProjectListResponse {
         return try await get(path: "/projects")
     }
     
-    func getProject(id: String) async throws -> GetProjectResponse {
+    /// Get project by ID
+    func getProject(id: String) async throws -> ProjectItem {
         return try await get(path: "/projects/\(id)")
     }
     
-    func deleteProject(id: String) async throws -> DeleteProjectResponse {
-        return try await delete(path: "/projects/\(id)")
+    /// Delete a project
+    func deleteProject(id: String) async throws {
+        let _: SuccessResponse = try await delete(path: "/projects/\(id)")
     }
     
-    func searchProjects(query: String, limit: Int? = nil) async throws -> SearchProjectsResponse {
+    /// Search projects semantically
+    func searchProjects(query: String, limit: Int = 10) async throws -> [ProjectItem] {
         let request = SearchProjectsRequest(query: query, limit: limit)
         return try await post(path: "/projects/search", body: request)
-    }
-    
-    func searchCode(query: String, limit: Int? = nil, projectId: String? = nil) async throws -> SearchCodeResponse {
-        let request = SearchCodeRequest(query: query, limit: limit, projectId: projectId)
-        return try await post(path: "/projects/search/code", body: request)
-    }
-    
-    func getProjectSkeletons(projectId: String, limit: Int? = nil) async throws -> ProjectSkeletonsResponse {
-        var path = "/projects/\(projectId)/skeletons"
-        if let limit = limit {
-            path += "?limit=\(limit)"
-        }
-        return try await get(path: path)
     }
     
     // MARK: - Private HTTP Methods

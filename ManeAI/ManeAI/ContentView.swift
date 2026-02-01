@@ -41,6 +41,9 @@ struct ContentView: View {
         case .documents:
             DocumentsView()
                 .environmentObject(apiService)
+        case .projects:
+            ProjectsView()
+                .environmentObject(apiService)
         case .chat:
             ChatView()
                 .environmentObject(apiService)
@@ -63,5 +66,5 @@ struct ContentView: View {
     ContentView()
         .environmentObject(SidecarManager())
         .environmentObject(APIService())
-        .modelContainer(for: [Document.self, ChatMessage.self, ChatConversation.self], inMemory: true)
+        .modelContainer(for: [Document.self, Project.self, ChatMessage.self, ChatConversation.self], inMemory: true)
 }

@@ -8,7 +8,7 @@ import { IngestModule } from './ingest';
 import { ChatModule } from './chat';
 import { MultimodalModule } from './multimodal';
 import { ImageCaptioningModule } from './image-captioning';
-import { ProjectModule } from './projects';
+import { ProjectsModule } from './projects';
 
 @Module({
   imports: [
@@ -19,7 +19,7 @@ import { ProjectModule } from './projects';
     ImageCaptioningModule,
     IngestModule,
     ChatModule,
-    ProjectModule,
+    ProjectsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

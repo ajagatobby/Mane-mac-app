@@ -22,6 +22,9 @@ struct DocumentsView: View {
     @State private var filterMediaType: MediaType? = nil
     @State private var importProgress: (current: Int, total: Int)? = nil
     @State private var showDeleteAllConfirmation = false
+    @State private var showCodebaseAlert = false
+    @State private var detectedCodebasePath: String? = nil
+    @State private var detectedCodebaseType: String? = nil
     
     // Supported file types for multimodal ingestion
     private let supportedTypes: [UTType] = [
@@ -160,6 +163,26 @@ struct DocumentsView: View {
                 Text(error)
             }
         }
+        .alert("Codebase Detected", isPresented: $showCodebaseAlert) {
+            Button("Index as Project") {
+                Task {
+                    await indexAsProject()
+                }
+            }
+            Button("Import Files Only") {
+                Task {
+                    if let path = detectedCodebasePath {
+                        await importFolderContents(URL(fileURLWithPath: path))
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                detectedCodebasePath = nil
+                detectedCodebaseType = nil
+            }
+        } message: {
+            Text("This folder appears to be a \(detectedCodebaseType ?? "code") project. Would you like to analyze it with smart indexing or just import the files?")
+        }
         .task {
             await refreshDocuments()
         }
@@ -221,7 +244,7 @@ struct DocumentsView: View {
     // Supported file extensions for import
     private static let supportedExtensions = [
         // Text files
-        "txt", "md", "swift", "ts", "js", "py", "json", "yaml", "yml", "xml", "html", "css", "csv",
+        "txt", "md", "csv",
         // Documents
         "pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt", "rtf",
         // Images
@@ -249,6 +272,26 @@ struct DocumentsView: View {
         
         isLoading = true
         
+        // Check if it's a codebase
+        do {
+            let detection = try await apiService.detectCodebase(folderPath: folderURL.path)
+            if detection.isCodebase {
+                isLoading = false
+                detectedCodebasePath = folderURL.path
+                detectedCodebaseType = detection.type
+                showCodebaseAlert = true
+                return
+            }
+        } catch {
+            // Detection failed, proceed with normal import
+        }
+        
+        await importFolderContents(folderURL)
+    }
+    
+    private func importFolderContents(_ folderURL: URL) async {
+        isLoading = true
+        
         do {
             // Get all supported files recursively
             let urls = try SecurityBookmarks.shared.listFilesRecursively(
@@ -267,6 +310,29 @@ struct DocumentsView: View {
             errorMessage = "Failed to read folder: \(error.localizedDescription)"
             isLoading = false
         }
+    }
+    
+    private func indexAsProject() async {
+        guard let path = detectedCodebasePath else { return }
+        
+        isLoading = true
+        
+        do {
+            let response = try await apiService.indexProject(folderPath: path)
+            
+            if response.success {
+                // Show success message
+                errorMessage = response.message
+            } else {
+                errorMessage = response.message
+            }
+        } catch {
+            errorMessage = "Failed to index project: \(error.localizedDescription)"
+        }
+        
+        isLoading = false
+        detectedCodebasePath = nil
+        detectedCodebaseType = nil
     }
     
     private func importURLs(_ urls: [URL]) async {
