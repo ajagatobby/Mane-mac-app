@@ -1,7 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as sharp from 'sharp';
 
 // Types for pipelines
 type Pipeline = any;
@@ -158,25 +157,128 @@ export class MultimodalService implements OnModuleInit {
 
   /**
    * Process video file - extract thumbnail and embed
+   * For longer videos (>60s), extracts multiple keyframes
    */
   async processVideo(filePath: string): Promise<ProcessedMedia> {
     try {
-      // Extract thumbnail from video
-      const thumbnailPath = await this.extractVideoThumbnail(filePath);
+      // Get video duration first
+      const duration = await this.getVideoDuration(filePath);
+      this.logger.log(`Video duration: ${duration}s`);
 
-      // Embed thumbnail using CLIP
-      const vector = await this.embedImage(thumbnailPath);
+      // Extract thumbnail(s) based on duration
+      let thumbnailPath: string;
+      let vector: number[];
+
+      if (duration > 60) {
+        // For long videos, extract multiple keyframes and use the best one
+        this.logger.log('Long video detected, extracting multiple keyframes...');
+        const keyframes = await this.extractMultipleKeyframes(filePath, duration);
+        
+        // Use the first keyframe as primary (usually most representative)
+        thumbnailPath = keyframes[0];
+        vector = await this.embedImage(thumbnailPath);
+      } else {
+        // For short videos, single thumbnail at 50%
+        thumbnailPath = await this.extractVideoThumbnail(filePath);
+        vector = await this.embedImage(thumbnailPath);
+      }
 
       return {
         mediaType: 'video',
         vector,
-        content: filePath, // Store original path
+        content: filePath,
         thumbnailPath,
       };
     } catch (error: any) {
       this.logger.error(`Failed to process video: ${error.message}`);
       throw error;
     }
+  }
+
+  /**
+   * Get video duration in seconds
+   */
+  private async getVideoDuration(videoPath: string): Promise<number> {
+    const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+    const ffmpeg = require('fluent-ffmpeg');
+    ffmpeg.setFfmpegPath(ffmpegPath);
+
+    return new Promise((resolve, reject) => {
+      ffmpeg.ffprobe(videoPath, (err: Error, metadata: any) => {
+        if (err) {
+          this.logger.warn(`Could not get video duration: ${err.message}`);
+          resolve(30); // Default to 30s if probe fails
+        } else {
+          resolve(metadata.format.duration || 30);
+        }
+      });
+    });
+  }
+
+  /**
+   * Extract multiple keyframes from a long video
+   * Extracts at 10%, 50%, and 90% of the video
+   */
+  private async extractMultipleKeyframes(
+    videoPath: string,
+    duration: number,
+  ): Promise<string[]> {
+    const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+    const ffmpeg = require('fluent-ffmpeg');
+    ffmpeg.setFfmpegPath(ffmpegPath);
+
+    const thumbnailDir = path.join(
+      process.env.HOME || '/tmp',
+      'Library',
+      'Application Support',
+      'ManeAI',
+      'thumbnails',
+    );
+
+    await fs.promises.mkdir(thumbnailDir, { recursive: true });
+
+    const baseName = path.basename(videoPath, path.extname(videoPath));
+    const timestamps = [
+      Math.floor(duration * 0.1),  // 10%
+      Math.floor(duration * 0.5),  // 50%
+      Math.floor(duration * 0.9),  // 90%
+    ];
+
+    const keyframePaths: string[] = [];
+
+    for (let i = 0; i < timestamps.length; i++) {
+      const timestamp = timestamps[i];
+      const keyframePath = path.join(
+        thumbnailDir,
+        `${baseName}_keyframe_${i}.jpg`,
+      );
+
+      try {
+        await new Promise<void>((resolve, reject) => {
+          ffmpeg(videoPath)
+            .screenshots({
+              timestamps: [timestamp],
+              filename: `${baseName}_keyframe_${i}.jpg`,
+              folder: thumbnailDir,
+              size: '224x224',
+            })
+            .on('end', () => resolve())
+            .on('error', (err: Error) => reject(err));
+        });
+        keyframePaths.push(keyframePath);
+      } catch (err: any) {
+        this.logger.warn(`Failed to extract keyframe at ${timestamp}s: ${err.message}`);
+      }
+    }
+
+    // If no keyframes extracted, fall back to single thumbnail
+    if (keyframePaths.length === 0) {
+      const fallback = await this.extractVideoThumbnail(videoPath);
+      return [fallback];
+    }
+
+    this.logger.log(`Extracted ${keyframePaths.length} keyframes`);
+    return keyframePaths;
   }
 
   /**
@@ -232,7 +334,7 @@ export class MultimodalService implements OnModuleInit {
   }
 
   /**
-   * Generate text embedding
+   * Generate text embedding using text model (384-dim)
    */
   async embedText(text: string): Promise<number[]> {
     const pipe = await this.getTextPipeline();
@@ -246,31 +348,62 @@ export class MultimodalService implements OnModuleInit {
   }
 
   /**
+   * Generate text embedding using CLIP text encoder (512-dim)
+   * This is used for cross-modal search (text query → image results)
+   */
+  async embedTextWithClip(text: string): Promise<number[]> {
+    const { AutoTokenizer, CLIPTextModelWithProjection } = await import(
+      '@huggingface/transformers'
+    );
+
+    // Load CLIP text model if not cached
+    if (!this.clipTextModel) {
+      this.logger.log('Loading CLIP text model for cross-modal search...');
+      this.clipTextModel = await CLIPTextModelWithProjection.from_pretrained(
+        'Xenova/clip-vit-base-patch32',
+      );
+      this.clipTokenizer = await AutoTokenizer.from_pretrained(
+        'Xenova/clip-vit-base-patch32',
+      );
+      this.logger.log('CLIP text model loaded successfully');
+    }
+
+    // Tokenize and encode
+    const inputs = await this.clipTokenizer(text, {
+      padding: true,
+      truncation: true,
+    });
+
+    const output = await this.clipTextModel(inputs);
+
+    // Get text embeddings and normalize
+    const vector = Array.from(output.text_embeds.data) as number[];
+    const magnitude = Math.sqrt(
+      vector.reduce((sum, val) => sum + val * val, 0),
+    );
+    return vector.map((v) => v / magnitude);
+  }
+
+  // CLIP text model cache
+  private clipTextModel: any = null;
+  private clipTokenizer: any = null;
+
+  /**
    * Generate image embedding using CLIP
+   * Note: The CLIP pipeline handles image preprocessing internally when given a file path
    */
   async embedImage(imagePath: string): Promise<number[]> {
     const pipe = await this.getClipPipeline();
 
-    // Read and preprocess image
-    const imageBuffer = await fs.promises.readFile(imagePath);
-
-    // Convert to RGB format that CLIP expects
-    const processedImage = await sharp(imageBuffer)
-      .resize(224, 224, { fit: 'cover' })
-      .removeAlpha()
-      .raw()
-      .toBuffer();
-
-    // Create image data for the pipeline
+    // CLIP pipeline handles preprocessing (resize, normalize, etc.) internally
     const output = await pipe(imagePath);
 
-    // Normalize the output
+    // Extract and normalize the output vector to unit length
     const vector = Array.from(output.data) as number[];
-
-    // Normalize to unit length
     const magnitude = Math.sqrt(
       vector.reduce((sum, val) => sum + val * val, 0),
     );
+    
     return vector.map((v) => v / magnitude);
   }
 

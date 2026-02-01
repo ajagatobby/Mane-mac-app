@@ -178,7 +178,7 @@ export class LanceDBService implements OnModuleInit {
   }
 
   /**
-   * Add a text document
+   * Add a text document (also used for audio transcripts)
    */
   async addTextDocument(
     content: string,
@@ -190,10 +190,24 @@ export class LanceDBService implements OnModuleInit {
       throw new Error('Text table not initialized');
     }
 
+    // Validate pre-computed vector dimension if provided
+    if (vector && vector.length !== this.TEXT_DIMENSION) {
+      throw new Error(
+        `Vector dimension mismatch: expected ${this.TEXT_DIMENSION}, got ${vector.length}. ` +
+        `Text table requires MiniLM embeddings (384-dim).`
+      );
+    }
+
     const id = this.generateId();
     const fileName = path.basename(filePath);
 
-    this.logger.log(`Adding text document: ${fileName}`);
+    // Extract mediaType from metadata (for audio) or default to 'text'
+    const mediaType = (metadata.mediaType as string) || 'text';
+    
+    // Remove mediaType from metadata to avoid duplication
+    const { mediaType: _, ...cleanMetadata } = metadata;
+
+    this.logger.log(`Adding ${mediaType} document: ${fileName}`);
     const docVector = vector || (await this.generateEmbedding(content));
 
     const record: TextDocumentRecord = {
@@ -201,20 +215,21 @@ export class LanceDBService implements OnModuleInit {
       content,
       filePath,
       fileName,
-      mediaType: 'text',
-      metadata: JSON.stringify(metadata),
+      mediaType,
+      metadata: JSON.stringify(cleanMetadata),
       vector: docVector,
       createdAt: new Date().toISOString(),
     };
 
     await this.textTable.add([record]);
-    this.logger.log(`Text document added: ${id} (${fileName})`);
+    this.logger.log(`${mediaType.charAt(0).toUpperCase() + mediaType.slice(1)} document added: ${id} (${fileName})`);
 
     return id;
   }
 
   /**
-   * Add a media document (image, audio, video)
+   * Add a media document (image, video)
+   * Note: Audio files should use addTextDocument since they use 384-dim text embeddings
    */
   async addMediaDocument(
     content: string,
@@ -226,6 +241,15 @@ export class LanceDBService implements OnModuleInit {
   ): Promise<string> {
     if (!this.mediaTable) {
       throw new Error('Media table not initialized');
+    }
+
+    // Validate vector dimension (CLIP produces 512-dim vectors)
+    if (vector.length !== this.MEDIA_DIMENSION) {
+      throw new Error(
+        `Vector dimension mismatch: expected ${this.MEDIA_DIMENSION}, got ${vector.length}. ` +
+        `Media table requires CLIP embeddings (512-dim). ` +
+        `If this is an audio file, use addTextDocument instead.`
+      );
     }
 
     const id = this.generateId();
@@ -324,15 +348,68 @@ export class LanceDBService implements OnModuleInit {
 
   /**
    * Hybrid search across text documents
+   * Combines vector search (semantic) with keyword matching (exact)
    */
   async hybridSearch(query: string, limit: number = 5): Promise<SearchResult[]> {
     if (!this.textTable) {
       throw new Error('Text table not initialized');
     }
 
+    // Run vector search
     const vectorResults = await this.searchText(query, limit * 2);
 
-    // Simple keyword filtering to boost relevance
+    // Extract keywords for boosting exact matches
+    const keywords = query
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((k) => k.length > 2);
+
+    // Score results with keyword boost
+    const scoredResults = vectorResults.map((result) => {
+      let keywordScore = 0;
+      const contentLower = result.content.toLowerCase();
+      const fileNameLower = result.fileName.toLowerCase();
+
+      for (const keyword of keywords) {
+        // Exact keyword matches in content
+        if (contentLower.includes(keyword)) {
+          keywordScore += 0.1;
+        }
+        // Filename matches are more valuable
+        if (fileNameLower.includes(keyword)) {
+          keywordScore += 0.2;
+        }
+        // Boost for exact word boundaries
+        const wordBoundaryRegex = new RegExp(`\\b${keyword}\\b`, 'i');
+        if (wordBoundaryRegex.test(result.content)) {
+          keywordScore += 0.15;
+        }
+      }
+
+      return {
+        ...result,
+        score: Math.min(result.score + keywordScore, 1.0), // Cap at 1.0
+      };
+    });
+
+    return scoredResults.sort((a, b) => b.score - a.score).slice(0, limit);
+  }
+
+  /**
+   * Hybrid search for media - combines vector search with filename matching
+   */
+  async hybridSearchMedia(
+    queryVector: number[],
+    query: string,
+    limit: number = 5,
+  ): Promise<SearchResult[]> {
+    if (!this.mediaTable) {
+      throw new Error('Media table not initialized');
+    }
+
+    const vectorResults = await this.searchMedia(queryVector, limit * 2);
+
+    // Extract keywords for filename matching
     const keywords = query
       .toLowerCase()
       .split(/\s+/)
@@ -340,13 +417,9 @@ export class LanceDBService implements OnModuleInit {
 
     const scoredResults = vectorResults.map((result) => {
       let keywordScore = 0;
-      const contentLower = result.content.toLowerCase();
       const fileNameLower = result.fileName.toLowerCase();
 
       for (const keyword of keywords) {
-        if (contentLower.includes(keyword)) {
-          keywordScore += 0.1;
-        }
         if (fileNameLower.includes(keyword)) {
           keywordScore += 0.2;
         }
@@ -354,7 +427,7 @@ export class LanceDBService implements OnModuleInit {
 
       return {
         ...result,
-        score: result.score + keywordScore,
+        score: Math.min(result.score + keywordScore, 1.0),
       };
     });
 
@@ -383,6 +456,15 @@ export class LanceDBService implements OnModuleInit {
 
     // Sort by score and return top results
     return results.sort((a, b) => b.score - a.score).slice(0, limit);
+  }
+
+  /**
+   * Check if media table has documents
+   */
+  async hasMediaDocuments(): Promise<boolean> {
+    if (!this.mediaTable) return false;
+    const count = await this.mediaTable.countRows();
+    return count > 0;
   }
 
   /**

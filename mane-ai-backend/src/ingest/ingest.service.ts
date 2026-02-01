@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { LanceDBService } from '../lancedb';
 import { MultimodalService, MediaType } from '../multimodal';
+import { ImageCaptioningService } from '../image-captioning';
 import {
   IngestDocumentDto,
   IngestResponseDto,
@@ -16,6 +17,7 @@ export class IngestService {
   constructor(
     private readonly lanceDBService: LanceDBService,
     private readonly multimodalService: MultimodalService,
+    private readonly imageCaptioningService: ImageCaptioningService,
   ) {}
 
   async ingestDocument(dto: IngestDocumentDto): Promise<IngestResponseDto> {
@@ -45,13 +47,51 @@ export class IngestService {
           dto.filePath,
           dto.metadata || {},
         );
-      } else {
-        // Media file (image, audio, video)
+      } else if (mediaType === 'audio') {
+        // Audio file - transcribe with Whisper, embed with MiniLM (384-dim)
+        // Store in text table since it uses text embeddings
         if (!fs.existsSync(dto.filePath)) {
           throw new Error(`File not found: ${dto.filePath}`);
         }
 
-        // Process media file
+        const processed = await this.multimodalService.processFile(dto.filePath);
+
+        // Store in text table with pre-computed vector and audio metadata
+        id = await this.lanceDBService.addTextDocument(
+          processed.content, // transcript
+          dto.filePath,
+          { ...dto.metadata, mediaType: 'audio' },
+          processed.vector, // 384-dim MiniLM vector
+        );
+      } else if (mediaType === 'image') {
+        // Image files - caption with Moondream, embed with MiniLM (384-dim)
+        // Store in text table for unified text search
+        if (!fs.existsSync(dto.filePath)) {
+          throw new Error(`File not found: ${dto.filePath}`);
+        }
+
+        // Generate detailed caption using Moondream vision model
+        const caption = await this.imageCaptioningService.generateCaption(
+          dto.filePath,
+        );
+        this.logger.log(
+          `Generated caption for ${fileName}: ${caption.substring(0, 100)}...`,
+        );
+
+        // Store caption in text table (will be embedded with MiniLM)
+        id = await this.lanceDBService.addTextDocument(
+          caption,
+          dto.filePath,
+          { ...dto.metadata, mediaType: 'image' },
+        );
+      } else {
+        // Video files - embed with CLIP (512-dim)
+        // Store in media table
+        if (!fs.existsSync(dto.filePath)) {
+          throw new Error(`File not found: ${dto.filePath}`);
+        }
+
+        // Process video file with CLIP
         const processed = await this.multimodalService.processFile(
           dto.filePath,
         );

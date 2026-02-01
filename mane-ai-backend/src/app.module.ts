@@ -7,6 +7,7 @@ import { OllamaModule } from './ollama';
 import { IngestModule } from './ingest';
 import { ChatModule } from './chat';
 import { MultimodalModule } from './multimodal';
+import { ImageCaptioningModule } from './image-captioning';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { MultimodalModule } from './multimodal';
     LanceDBModule,
     OllamaModule,
     MultimodalModule,
+    ImageCaptioningModule,
     IngestModule,
     ChatModule,
   ],

@@ -158,8 +158,9 @@ class APIService: ObservableObject {
         self.baseURL = baseURL
         
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 300
+        // Increased timeout for CLIP/Whisper model loading and processing
+        config.timeoutIntervalForRequest = 180  // 3 minutes for media processing
+        config.timeoutIntervalForResource = 600 // 10 minutes for large files
         self.session = URLSession(configuration: config)
     }
     

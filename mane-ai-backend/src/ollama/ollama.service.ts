@@ -1,6 +1,7 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '../config';
 import { LanceDBService } from '../lancedb';
+import { MultimodalService } from '../multimodal';
 import { ChatOllama } from '@langchain/ollama';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 
@@ -31,6 +32,8 @@ export class OllamaService implements OnModuleInit {
   constructor(
     private readonly configService: ConfigService,
     private readonly lanceDBService: LanceDBService,
+    @Inject(forwardRef(() => MultimodalService))
+    private readonly multimodalService: MultimodalService,
   ) {}
 
   async onModuleInit() {
@@ -88,9 +91,9 @@ export class OllamaService implements OnModuleInit {
       }
     }
 
-    // Search for relevant documents
+    // Search for relevant documents (text + media)
     this.logger.log('Searching for relevant context...');
-    const searchResults = await this.lanceDBService.hybridSearch(query, 5);
+    const searchResults = await this.searchAllDocuments(query, 5);
 
     // Build context from search results
     const context = this.buildContext(searchResults);
@@ -143,9 +146,9 @@ export class OllamaService implements OnModuleInit {
       }
     }
 
-    // Search for relevant documents
+    // Search for relevant documents (text + media)
     this.logger.log('Searching for relevant context...');
-    const searchResults = await this.lanceDBService.hybridSearch(query, 5);
+    const searchResults = await this.searchAllDocuments(query, 5);
 
     // Build context from search results
     const context = this.buildContext(searchResults);
@@ -177,10 +180,113 @@ export class OllamaService implements OnModuleInit {
     }
   }
 
+  /**
+   * Search both text and media documents using PARALLEL inference
+   * 
+   * This runs two embedding models in parallel:
+   * 1. MiniLM (384-dim) for text/audio transcripts in documents_text
+   * 2. CLIP Text Encoder (512-dim) for images/videos in documents_media
+   */
+  private async searchAllDocuments(
+    query: string,
+    limit: number,
+  ): Promise<
+    Array<{
+      id: string;
+      content: string;
+      filePath: string;
+      fileName: string;
+      mediaType: string;
+      thumbnailPath?: string;
+      metadata: Record<string, unknown>;
+      score: number;
+    }>
+  > {
+    type SearchResult = {
+      id: string;
+      content: string;
+      filePath: string;
+      fileName: string;
+      mediaType: string;
+      thumbnailPath?: string;
+      metadata: Record<string, unknown>;
+      score: number;
+    };
+
+    // Run BOTH embedding models in PARALLEL
+    this.logger.log('Running parallel search (MiniLM + CLIP)...');
+
+    const hasMedia = await this.lanceDBService.hasMediaDocuments();
+
+    // Prepare parallel tasks
+    const searchTasks: Promise<SearchResult[]>[] = [];
+
+    // Task 1: Text search with MiniLM (384-dim)
+    searchTasks.push(
+      this.lanceDBService.hybridSearch(query, limit).catch((err) => {
+        this.logger.warn(`Text search failed: ${err.message}`);
+        return [] as SearchResult[];
+      }),
+    );
+
+    // Task 2: Media search with CLIP (512-dim) - only if media exists
+    if (hasMedia) {
+      searchTasks.push(
+        (async () => {
+          try {
+            this.logger.log('Embedding query with CLIP for media search...');
+            const clipTextVector =
+              await this.multimodalService.embedTextWithClip(query);
+            return await this.lanceDBService.searchMedia(clipTextVector, limit);
+          } catch (err: any) {
+            this.logger.warn(`Media search failed: ${err.message}`);
+            return [] as SearchResult[];
+          }
+        })(),
+      );
+    }
+
+    // Execute both searches in parallel
+    const results = await Promise.all(searchTasks);
+
+    // Flatten results
+    const textResults = results[0] || [];
+    const mediaResults = results[1] || [];
+
+    this.logger.log(
+      `Found ${textResults.length} text + ${mediaResults.length} media results`,
+    );
+
+    // Merge and normalize scores
+    // CLIP and MiniLM use different score scales, so we normalize
+    const allResults: SearchResult[] = [];
+
+    // Add text results (MiniLM scores are typically 0-1)
+    for (const r of textResults) {
+      allResults.push({
+        ...r,
+        score: r.score, // Already normalized
+      });
+    }
+
+    // Add media results (CLIP cosine similarity can be -1 to 1)
+    for (const r of mediaResults) {
+      allResults.push({
+        ...r,
+        // Normalize CLIP scores to 0-1 range: (score + 1) / 2
+        score: (r.score + 1) / 2,
+      });
+    }
+
+    // Sort by normalized score and return top results
+    return allResults.sort((a, b) => b.score - a.score).slice(0, limit);
+  }
+
   private buildContext(
     searchResults: Array<{
       fileName: string;
       content: string;
+      mediaType?: string;
       score: number;
     }>,
   ): string {
@@ -189,7 +295,24 @@ export class OllamaService implements OnModuleInit {
     }
 
     const contextParts = searchResults.map((result, index) => {
-      // Truncate content if too long
+      const mediaType = result.mediaType || 'text';
+
+      // For media files, describe them instead of showing content
+      if (mediaType === 'image') {
+        return `[Image ${index + 1}: ${result.fileName}]\nThis is an image file located at: ${result.content}`;
+      } else if (mediaType === 'video') {
+        return `[Video ${index + 1}: ${result.fileName}]\nThis is a video file located at: ${result.content}`;
+      } else if (mediaType === 'audio') {
+        // Audio has transcript in content
+        const maxLength = 1000;
+        const content =
+          result.content.length > maxLength
+            ? result.content.substring(0, maxLength) + '...'
+            : result.content;
+        return `[Audio ${index + 1}: ${result.fileName}]\nTranscript: ${content}`;
+      }
+
+      // Text documents
       const maxLength = 1000;
       const content =
         result.content.length > maxLength
