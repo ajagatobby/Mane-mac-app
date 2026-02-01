@@ -49,9 +49,9 @@ DerivedData/
 *.dSYM.zip
 *.dSYM
 
-# LanceDB test data
+# LanceDB data files (not source code)
 test-db/
-lancedb/
+**/Library/**/lancedb/
 
 # Temporary files
 tmp/
