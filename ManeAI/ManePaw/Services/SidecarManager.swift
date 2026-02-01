@@ -56,7 +56,7 @@ class SidecarManager: ObservableObject {
             in: .userDomainMask
         ).first!
         
-        let maneAIDir = appSupport.appendingPathComponent("ManeAI", isDirectory: true)
+        let maneAIDir = appSupport.appendingPathComponent("ManePaw", isDirectory: true)
         let dbDir = maneAIDir.appendingPathComponent("lancedb", isDirectory: true)
         
         // Ensure directory exists

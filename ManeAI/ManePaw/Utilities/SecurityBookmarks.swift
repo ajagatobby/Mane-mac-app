@@ -13,7 +13,7 @@ class SecurityBookmarks {
     
     static let shared = SecurityBookmarks()
     
-    private let bookmarksKey = "ManeAI.SecurityBookmarks"
+    private let bookmarksKey = "ManePaw.SecurityBookmarks"
     private var activeAccessURLs: Set<URL> = []
     
     private init() {}
