@@ -53,7 +53,7 @@ final class PanelManager: ObservableObject {
         // OverlayPanel handles: .mainMenu level, resignKey() auto-dismiss,
         // proper style masks, and memory management
         let panel = OverlayPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 680, height: 500),
+            contentRect: NSRect(x: 0, y: 0, width: 750, height: 420),
             backing: .buffered,
             defer: false
         )
@@ -254,25 +254,34 @@ struct RaycastPanelContent: View {
     @State private var results: [ResultSection] = []
     @State private var showChat = false
     @State private var chatMessages: [ChatMessage] = []
+    @State private var selectedIndex = 0
     @FocusState private var focused: Bool
     
     // Animation namespace for morphing effects
     @Namespace private var animation
     
+    // Quick actions data - vibrant colors like Raycast
+    private let quickActions: [(title: String, subtitle: String, icon: String, color: Color, id: String)] = [
+        ("AI Chat", "Raycast AI", "sparkles", Color(red: 0.95, green: 0.3, blue: 0.35), "chat"),
+        ("Documents", "Search files", "doc.fill", Color(red: 1.0, green: 0.78, blue: 0.28), "search"),
+        ("Projects", "Browse codebases", "folder.fill", Color(red: 0.98, green: 0.6, blue: 0.2), "projects")
+    ]
+    
+    // Total selectable items
+    private var totalItems: Int {
+        if showChat { return 0 }
+        if !results.isEmpty { return results.flatMap { $0.items }.count }
+        return quickActions.count + 1 // +1 for Import command
+    }
+    
     // Dynamic height based on current state
     private var panelHeight: CGFloat {
         if showChat && results.isEmpty {
-            // Compact height for chat mode (grows slightly with messages)
-            let baseHeight: CGFloat = 320
-            let messageHeight = min(CGFloat(chatMessages.count) * 40, 180)
+            let baseHeight: CGFloat = 340
+            let messageHeight = min(CGFloat(chatMessages.count) * 50, 160)
             return baseHeight + messageHeight
-        } else if !results.isEmpty {
-            // Full height when showing results
-            return 500
-        } else {
-            // Default height for quick actions
-            return 500
         }
+        return 420
     }
     
     var body: some View {
@@ -280,63 +289,54 @@ struct RaycastPanelContent: View {
             // Search bar
             searchBarView
             
-            Divider()
+            // Divider
+            Rectangle()
+                .fill(Color(white: 0.85))
+                .frame(height: 0.5)
             
-            // Content with smooth transitions
+            // Content
             contentView
-                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showChat)
-                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: searchMode)
+                .animation(.spring(response: 0.3, dampingFraction: 0.85), value: showChat)
+                .animation(.spring(response: 0.3, dampingFraction: 0.85), value: searchMode)
             
             // Action bar
             actionBarView
         }
-        .frame(width: 680, height: panelHeight)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showChat)
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: chatMessages.count)
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: results.isEmpty)
+        .frame(width: 750, height: panelHeight)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showChat)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: chatMessages.count)
         .background {
+            // Raycast-style clean background - more opaque for better contrast
             ZStack {
-                // Base blur layer
-                VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
+                // Base blur effect
+                VisualEffectView(material: .popover, blendingMode: .behindWindow)
                 
-                // Solid background layer for proper opacity
-                Color(nsColor: .windowBackgroundColor)
-                    .opacity(0.85)
-                
-                // Subtle gradient for depth
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.05),
-                        Color.clear
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                
-                // Very subtle noise for texture
-                StaticNoiseOverlay(intensity: 0.012)
+                // Solid light gray overlay for better readability
+                Color(red: 0.95, green: 0.95, blue: 0.96)
+                    .opacity(0.97)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(
                     LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.3),
-                            Color.white.opacity(0.1)
-                        ],
+                        colors: [Color.white.opacity(0.5), Color.black.opacity(0.08)],
                         startPoint: .top,
                         endPoint: .bottom
                     ),
                     lineWidth: 0.5
                 )
         }
-        .shadow(color: .black.opacity(0.35), radius: 50, y: 15)
-        .onAppear { focused = true }
+        .shadow(color: .black.opacity(0.25), radius: 40, y: 15)
+        .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
+        .onAppear { 
+            focused = true 
+            selectedIndex = 0
+        }
         .onKeyPress(.escape) {
             if showChat { 
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                     showChat = false 
                 }
                 return .handled 
@@ -344,125 +344,153 @@ struct RaycastPanelContent: View {
             onDismiss()
             return .handled
         }
-        .onChange(of: searchQuery) { _, q in search(q) }
+        .onKeyPress(.upArrow) {
+            withAnimation(.easeOut(duration: 0.1)) {
+                selectedIndex = max(0, selectedIndex - 1)
+            }
+            return .handled
+        }
+        .onKeyPress(.downArrow) {
+            withAnimation(.easeOut(duration: 0.1)) {
+                selectedIndex = min(totalItems - 1, selectedIndex + 1)
+            }
+            return .handled
+        }
+        .onKeyPress(.return) {
+            executeSelectedAction()
+            return .handled
+        }
+        .onChange(of: searchQuery) { _, q in 
+            selectedIndex = 0
+            search(q) 
+        }
     }
     
     // MARK: - Search Bar
     
     private var searchBarView: some View {
         HStack(spacing: 12) {
-            Image(systemName: searchMode.icon)
-                .font(.system(size: 22))
-                .foregroundStyle(searchMode.iconColor)
-                .frame(width: 32)
-                .contentTransition(.symbolEffect(.replace))
-                .onTapGesture { 
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        cycleMode() 
-                    }
+            // Text field with custom placeholder
+            ZStack(alignment: .leading) {
+                // Custom placeholder with better contrast
+                if searchQuery.isEmpty {
+                    Text("Search for apps and commands...")
+                        .font(.system(size: 17, weight: .regular))
+                        .foregroundStyle(Color(white: 0.5))
                 }
+                
+                // Actual text field
+                TextField("", text: $searchQuery)
+                    .font(.system(size: 17, weight: .regular))
+                    .textFieldStyle(.plain)
+                    .foregroundStyle(Color(white: 0.0))
+                    .focused($focused)
+                    .onSubmit { 
+                        if showChat {
+                            submit()
+                        } else {
+                            executeSelectedAction()
+                        }
+                    }
+            }
             
-            TextField(searchMode.placeholder, text: $searchQuery)
-                .font(.system(size: 20))
-                .textFieldStyle(.plain)
-                .focused($focused)
-                .onSubmit { submit() }
+            Spacer()
             
+            // Right side badges
             if searchQuery.isEmpty {
-                Text("⌃W")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                HStack(spacing: 8) {
+                    // Ask AI badge
+                    Text("Ask AI")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color(white: 0.4))
+                    
+                    // Tab badge
+                    Text("Tab")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color(white: 0.35))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color(white: 0.85), in: RoundedRectangle(cornerRadius: 4))
+                }
             } else {
-                Button { searchQuery = "" } label: {
+                Button { 
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        searchQuery = "" 
+                    }
+                } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 16))
+                        .foregroundStyle(Color(white: 0.6))
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 20)
-        .frame(height: 56)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+        .frame(height: 52)
     }
     
     // MARK: - Content
     
     @ViewBuilder
     private var contentView: some View {
-        ZStack {
-            if showChat {
-                chatView
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .move(edge: .trailing)).combined(with: .scale(scale: 0.95)),
-                        removal: .opacity.combined(with: .move(edge: .trailing)).combined(with: .scale(scale: 0.95))
-                    ))
-            } else if results.isEmpty && searchQuery.isEmpty {
-                quickActionsView
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .scale(scale: 0.98)),
-                        removal: .opacity.combined(with: .scale(scale: 0.98))
-                    ))
-            } else if results.isEmpty {
-                noResultsView
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
-            } else {
-                resultsListView
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
+        if showChat {
+            chatView
+                .transition(.asymmetric(
+                    insertion: .opacity.combined(with: .move(edge: .trailing)),
+                    removal: .opacity.combined(with: .move(edge: .trailing))
+                ))
+        } else if results.isEmpty && searchQuery.isEmpty {
+            quickActionsView
+                .transition(.opacity)
+        } else if results.isEmpty && !searchQuery.isEmpty {
+            noResultsView
+                .transition(.opacity)
+        } else {
+            resultsListView
+                .transition(.opacity)
         }
     }
     
     private var quickActionsView: some View {
-        ScrollView {
+        ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
-                sectionHeader("Quick Actions")
+                // Section header - Raycast style
+                Text("Suggestions")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color(white: 0.4))
+                    .padding(.horizontal, 24)
+                    .padding(.top, 12)
+                    .padding(.bottom, 6)
                 
-                AnimatedActionRow(
-                    title: "Chat with AI",
-                    subtitle: "Ask questions about your files",
-                    icon: "bubble.left.and.bubble.right",
-                    color: .purple,
-                    namespace: animation
-                ) {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                        searchMode = .chat
-                        showChat = true
+                // Quick action items
+                ForEach(Array(quickActions.enumerated()), id: \.element.id) { index, action in
+                    RaycastRow(
+                        icon: action.icon,
+                        iconColor: action.color,
+                        title: action.title,
+                        subtitle: action.subtitle,
+                        accessoryText: "Command",
+                        isSelected: selectedIndex == index
+                    ) {
+                        handleQuickAction(action.id)
                     }
                 }
                 
-                AnimatedActionRow(
-                    title: "Search Documents",
-                    subtitle: "Find files in your knowledge base",
-                    icon: "doc.text.magnifyingglass",
-                    color: .blue,
-                    namespace: animation
-                ) {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                        searchMode = .documents
-                    }
-                }
+                // Commands section
+                Text("Commands")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color(white: 0.4))
+                    .padding(.horizontal, 24)
+                    .padding(.top, 14)
+                    .padding(.bottom, 6)
                 
-                AnimatedActionRow(
-                    title: "Browse Projects",
-                    subtitle: "View indexed codebases",
-                    icon: "folder.badge.gearshape",
-                    color: .orange,
-                    namespace: animation
-                ) {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                        searchMode = .projects
-                    }
-                }
-                
-                AnimatedActionRow(
-                    title: "Import Files",
-                    subtitle: "Add to knowledge base",
-                    icon: "square.and.arrow.down",
-                    color: .green,
-                    namespace: animation
+                RaycastRow(
+                    icon: "doc.badge.plus",
+                    iconColor: Color(red: 0.25, green: 0.55, blue: 0.9),
+                    title: "Import Document",
+                    subtitle: "Knowledge base",
+                    accessoryText: "Command",
+                    isSelected: selectedIndex == quickActions.count
                 ) {
                     // Import action
                 }
@@ -471,140 +499,229 @@ struct RaycastPanelContent: View {
         }
     }
     
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 20)
-            .padding(.top, 14)
-            .padding(.bottom, 6)
-    }
-    
     private var noResultsView: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 36, weight: .light))
-                .foregroundStyle(.tertiary)
-            Text("No results for \"\(searchQuery)\"")
-                .font(.system(size: 14))
-                .foregroundStyle(.secondary)
+        VStack(spacing: 16) {
+            Image(systemName: "doc.text.magnifyingglass")
+                .font(.system(size: 40, weight: .light))
+                .foregroundStyle(Color(white: 0.65))
+            
+            VStack(spacing: 4) {
+                Text("No Results")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color(white: 0.3))
+                Text("No matches found for \"\(searchQuery)\"")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(white: 0.45))
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     private var resultsListView: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
                 ForEach(results) { section in
-                    sectionHeader(section.category.rawValue)
-                    ForEach(section.items) { item in
-                        HStack(spacing: 12) {
-                            Image(systemName: item.icon)
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(item.iconColor)
-                                .frame(width: 28, height: 28)
-                                .background(item.iconColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
-                            
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(item.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                                if let sub = item.subtitle {
-                                    Text(sub).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-                                }
-                            }
-                            Spacer()
+                    Text(section.category.rawValue)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color(white: 0.4))
+                        .padding(.horizontal, 24)
+                        .padding(.top, 12)
+                        .padding(.bottom, 6)
+                    
+                    ForEach(Array(section.items.enumerated()), id: \.element.id) { index, item in
+                        RaycastRow(
+                            icon: item.icon,
+                            iconColor: item.iconColor,
+                            title: item.title,
+                            subtitle: item.subtitle,
+                            accessoryText: getFileExtension(item.title),
+                            isSelected: selectedIndex == index
+                        ) {
+                            // Open file action
                         }
-                        .padding(.horizontal, 20)
-                        .frame(height: 44)
                     }
                 }
             }
+            .padding(.bottom, 8)
         }
     }
     
     private var chatView: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                LazyVStack(spacing: 10) {
-                    ForEach(chatMessages) { msg in
-                        HStack {
-                            if msg.isUser { Spacer(minLength: 50) }
-                            Text(msg.content)
-                                .font(.system(size: 14))
-                                .padding(10)
-                                .background(msg.isUser ? Color.blue : Color.gray.opacity(0.15))
-                                .foregroundStyle(msg.isUser ? .white : .primary)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                            if !msg.isUser { Spacer(minLength: 50) }
-                        }
-                    }
-                }
-                .padding(16)
-            }
-            
+            // Chat header
             HStack {
                 Button { 
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                         showChat = false
                         chatMessages = []
                     }
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 10, weight: .bold))
                         Text("Back")
                             .font(.system(size: 12, weight: .medium))
                     }
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                    .foregroundStyle(Color(white: 0.35))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(white: 0.85), in: RoundedRectangle(cornerRadius: 5))
                 }
                 .buttonStyle(.plain)
+                
                 Spacer()
-                Text("Press ↵ to send").font(.system(size: 11)).foregroundStyle(.tertiary)
+                
+                HStack(spacing: 4) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 12))
+                    Text("AI Chat")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(Color(white: 0.4))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color(white: 0.91))
+            
+            // Messages
+            ScrollView(showsIndicators: false) {
+                LazyVStack(spacing: 12) {
+                    if chatMessages.isEmpty {
+                        VStack(spacing: 8) {
+                            Image(systemName: "bubble.left.and.bubble.right")
+                                .font(.system(size: 32, weight: .light))
+                                .foregroundStyle(Color(white: 0.65))
+                            Text("Ask anything about your documents")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color(white: 0.45))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
+                    }
+                    
+                    ForEach(chatMessages) { msg in
+                        ChatBubble(message: msg)
+                    }
+                }
+                .padding(16)
+            }
+            
+            // Input hint
+            HStack {
+                Spacer()
+                Text("Type your message and press ↵")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color(white: 0.5))
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
-            .background(Color(nsColor: .separatorColor).opacity(0.3))
         }
     }
     
-    // MARK: - Action Bar
+    // MARK: - Action Bar (Raycast style footer)
     
     private var actionBarView: some View {
-        HStack(spacing: 16) {
-            shortcutHint("↑↓", "Navigate")
-            shortcutHint("↵", "Select")
-            shortcutHint("esc", "Close")
+        HStack(spacing: 0) {
+            // Left side - status icon
+            HStack(spacing: 6) {
+                Image(systemName: sidecarManager.isHealthy ? "bolt.fill" : "bolt.slash")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(sidecarManager.isHealthy ? Color(white: 0.35) : .orange)
+            }
+            
             Spacer()
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(sidecarManager.isHealthy ? Color.green : Color.orange)
-                    .frame(width: 6, height: 6)
-                Text(sidecarManager.isHealthy ? "Connected" : "...")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+            
+            // Right side - action hints (Raycast style)
+            HStack(spacing: 16) {
+                // Open Command action
+                HStack(spacing: 6) {
+                    Text("Open Command")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color(white: 0.35))
+                    
+                    Text("↵")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color(white: 0.3))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color(white: 0.82), in: RoundedRectangle(cornerRadius: 4))
+                }
+                
+                // Divider
+                Rectangle()
+                    .fill(Color(white: 0.75))
+                    .frame(width: 1, height: 14)
+                
+                // Actions
+                HStack(spacing: 6) {
+                    Text("Actions")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color(white: 0.35))
+                    
+                    HStack(spacing: 2) {
+                        Text("⌘")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("K")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .foregroundStyle(Color(white: 0.3))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Color(white: 0.82), in: RoundedRectangle(cornerRadius: 4))
+                }
             }
         }
-        .padding(.horizontal, 20)
-        .frame(height: 40)
-        .background(Color.primary.opacity(0.03))
-    }
-    
-    private func shortcutHint(_ key: String, _ label: String) -> some View {
-        HStack(spacing: 4) {
-            Text(key)
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(Color.gray.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
-            Text(label)
-                .font(.system(size: 11))
+        .padding(.horizontal, 16)
+        .frame(height: 38)
+        .background(Color(white: 0.91))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color(white: 0.80))
+                .frame(height: 0.5)
         }
-        .foregroundStyle(.secondary)
     }
     
-    // MARK: - Actions
+    // MARK: - Helpers
+    
+    private func getFileExtension(_ filename: String) -> String {
+        let ext = (filename as NSString).pathExtension.uppercased()
+        return ext.isEmpty ? "FILE" : ext
+    }
+    
+    private func handleQuickAction(_ id: String) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            switch id {
+            case "chat":
+                searchMode = .chat
+                showChat = true
+            case "search":
+                searchMode = .documents
+            case "projects":
+                searchMode = .projects
+            case "import":
+                break
+            default:
+                break
+            }
+        }
+    }
+    
+    private func executeSelectedAction() {
+        if showChat { return }
+        
+        if results.isEmpty && searchQuery.isEmpty {
+            // Quick actions
+            if selectedIndex < quickActions.count {
+                handleQuickAction(quickActions[selectedIndex].id)
+            }
+        } else if !results.isEmpty {
+            // Results
+            let allItems = results.flatMap { $0.items }
+            if selectedIndex < allItems.count {
+                // Handle result selection
+            }
+        }
+    }
     
     private func cycleMode() {
         let modes: [SearchMode] = [.search, .chat, .documents, .projects]
@@ -638,7 +755,7 @@ struct RaycastPanelContent: View {
             do {
                 let resp = try await apiService.search(query: query, limit: 10)
                 let items = resp.results.map {
-                    ResultItem(id: $0.id, title: URL(fileURLWithPath: $0.filePath).lastPathComponent, subtitle: $0.filePath, icon: "doc.text", iconColor: .blue, category: .documents)
+                    ResultItem(id: $0.id, title: URL(fileURLWithPath: $0.filePath).lastPathComponent, subtitle: $0.filePath, icon: "doc.fill", iconColor: .blue, category: .documents)
                 }
                 await MainActor.run { results = items.isEmpty ? [] : [ResultSection(category: .documents, items: items)] }
             } catch {
@@ -648,86 +765,116 @@ struct RaycastPanelContent: View {
     }
 }
 
-// MARK: - Animated Action Row
+// MARK: - Raycast Row (matches actual Raycast design)
 
-struct AnimatedActionRow: View {
-    let title: String
-    let subtitle: String
+struct RaycastRow: View {
     let icon: String
-    let color: Color
-    let namespace: Namespace.ID
+    let iconColor: Color
+    let title: String
+    let subtitle: String?
+    let accessoryText: String
+    let isSelected: Bool
     let action: () -> Void
     
     @State private var isHovered = false
-    @State private var isPressed = false
     
     var body: some View {
-        Button(action: {
-            // Trigger press animation
-            withAnimation(.spring(response: 0.15, dampingFraction: 0.6)) {
-                isPressed = true
-            }
-            
-            // Execute action after brief delay for visual feedback
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
-                    isPressed = false
-                }
-                action()
-            }
-        }) {
+        Button(action: action) {
             HStack(spacing: 12) {
-                // Icon with morphing background
+                // Icon - colored rounded square with white SF Symbol
                 ZStack {
-                    RoundedRectangle(cornerRadius: isPressed ? 10 : 8)
-                        .fill(color.opacity(isHovered ? 0.2 : 0.12))
-                        .frame(width: isPressed ? 36 : 32, height: isPressed ? 36 : 32)
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(iconColor)
+                        .frame(width: 28, height: 28)
+                        .shadow(color: iconColor.opacity(0.3), radius: 2, y: 1)
                     
                     Image(systemName: icon)
-                        .font(.system(size: isPressed ? 18 : 16, weight: .medium))
-                        .foregroundStyle(color)
-                        .scaleEffect(isPressed ? 1.1 : 1.0)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
                 }
-                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isPressed)
-                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isHovered)
                 
-                // Text content
-                VStack(alignment: .leading, spacing: 2) {
+                // Title and optional subtitle inline
+                HStack(spacing: 8) {
                     Text(title)
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(isHovered ? color : .primary)
-                    Text(subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(white: 0.05))
+                        .lineLimit(1)
+                    
+                    if let subtitle = subtitle {
+                        Text(subtitle)
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundStyle(Color(white: 0.45))
+                            .lineLimit(1)
+                    }
                 }
-                .animation(.easeOut(duration: 0.2), value: isHovered)
                 
                 Spacer()
                 
-                // Chevron with animation
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(isHovered ? color.opacity(0.6) : Color.gray.opacity(0.3))
-                    .offset(x: isHovered ? 3 : 0)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+                // Right-aligned accessory text
+                Text(accessoryText)
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(Color(white: 0.45))
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 6)
-            .frame(height: 56)
-            .background {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(isHovered ? color.opacity(0.08) : Color.clear)
-                    .padding(.horizontal, 8)
-            }
-            .scaleEffect(isPressed ? 0.98 : 1.0)
-            .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isPressed)
-            .contentShape(Rectangle())
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isSelected ? Color(red: 0.82, green: 0.88, blue: 0.97) : (isHovered ? Color(white: 0.90) : Color.clear))
+            )
+            .padding(.horizontal, 8)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(.easeOut(duration: 0.08)) {
                 isHovered = hovering
             }
         }
+    }
+}
+
+// MARK: - Chat Bubble
+
+struct ChatBubble: View {
+    let message: ChatMessage
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            if !message.isUser {
+                // AI avatar
+                Image(systemName: "sparkles")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 24, height: 24)
+                    .background(
+                        LinearGradient(colors: [Color(red: 0.95, green: 0.3, blue: 0.35), Color(red: 0.85, green: 0.25, blue: 0.4)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: RoundedRectangle(cornerRadius: 6)
+                    )
+            }
+            
+            VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
+                Text(message.isUser ? "You" : "Mane-paw")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color(white: 0.45))
+                
+                Text(message.content)
+                    .font(.system(size: 13))
+                    .foregroundStyle(message.isUser ? .white : Color(white: 0.1))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        message.isUser 
+                            ? AnyShapeStyle(Color(red: 0.2, green: 0.5, blue: 0.95))
+                            : AnyShapeStyle(Color(white: 0.88)),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    )
+            }
+            .frame(maxWidth: 400, alignment: message.isUser ? .trailing : .leading)
+            
+            if message.isUser {
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: message.isUser ? .trailing : .leading)
     }
 }
