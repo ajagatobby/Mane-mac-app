@@ -1,0 +1,37 @@
+import { IsString, IsOptional, IsBoolean } from 'class-validator';
+
+export class ChatQueryDto {
+  @IsString()
+  query: string;
+
+  @IsOptional()
+  @IsBoolean()
+  stream?: boolean;
+}
+
+export class ChatResponseDto {
+  answer: string;
+  sources: Array<{
+    fileName: string;
+    filePath: string;
+    relevance: number;
+  }>;
+}
+
+export class SearchQueryDto {
+  @IsString()
+  query: string;
+
+  @IsOptional()
+  limit?: number;
+}
+
+export class SearchResponseDto {
+  results: Array<{
+    id: string;
+    content: string;
+    fileName: string;
+    filePath: string;
+    score: number;
+  }>;
+}
