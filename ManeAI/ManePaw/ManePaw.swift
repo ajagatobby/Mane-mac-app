@@ -262,16 +262,23 @@ struct RaycastPanelContent: View {
     
     // Quick actions data - vibrant colors like Raycast
     private let quickActions: [(title: String, subtitle: String, icon: String, color: Color, id: String)] = [
-        ("AI Chat", "Raycast AI", "sparkles", Color(red: 0.95, green: 0.3, blue: 0.35), "chat"),
+        ("AI Chat", "Mane-paw AI", "sparkles", Color(red: 0.95, green: 0.3, blue: 0.35), "chat"),
         ("Documents", "Search files", "doc.fill", Color(red: 1.0, green: 0.78, blue: 0.28), "search"),
         ("Projects", "Browse codebases", "folder.fill", Color(red: 0.98, green: 0.6, blue: 0.2), "projects")
+    ]
+    
+    // Commands data - essential utility tools
+    private let commands: [(title: String, subtitle: String, icon: String, color: Color, id: String)] = [
+        ("Calculator", "Quick math", "plus.forwardslash.minus", Color(red: 0.35, green: 0.35, blue: 0.38), "calculator"),
+        ("Clipboard History", "Recent copies", "doc.on.clipboard", Color(red: 0.55, green: 0.36, blue: 0.85), "clipboard"),
+        ("Color Picker", "Pick any color", "eyedropper", Color(red: 0.3, green: 0.75, blue: 0.45), "colorpicker")
     ]
     
     // Total selectable items
     private var totalItems: Int {
         if showChat { return 0 }
         if !results.isEmpty { return results.flatMap { $0.items }.count }
-        return quickActions.count + 1 // +1 for Import command
+        return quickActions.count + commands.count
     }
     
     // Dynamic height based on current state
@@ -296,15 +303,15 @@ struct RaycastPanelContent: View {
             
             // Content
             contentView
-                .animation(.spring(response: 0.3, dampingFraction: 0.85), value: showChat)
-                .animation(.spring(response: 0.3, dampingFraction: 0.85), value: searchMode)
+                .animation(.easeInOut(duration: 0.25), value: showChat)
+                .animation(.easeInOut(duration: 0.2), value: searchMode)
             
             // Action bar
             actionBarView
         }
         .frame(width: 750, height: panelHeight)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showChat)
-        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: chatMessages.count)
+        .animation(.easeInOut(duration: 0.3), value: showChat)
+        .animation(.easeInOut(duration: 0.2), value: chatMessages.count)
         .background {
             // Raycast-style clean background - more opaque for better contrast
             ZStack {
@@ -336,7 +343,7 @@ struct RaycastPanelContent: View {
         }
         .onKeyPress(.escape) {
             if showChat { 
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                withAnimation(.easeOut(duration: 0.2)) {
                     showChat = false 
                 }
                 return .handled 
@@ -484,19 +491,41 @@ struct RaycastPanelContent: View {
                     .padding(.top, 14)
                     .padding(.bottom, 6)
                 
-                RaycastRow(
-                    icon: "doc.badge.plus",
-                    iconColor: Color(red: 0.25, green: 0.55, blue: 0.9),
-                    title: "Import Document",
-                    subtitle: "Knowledge base",
-                    accessoryText: "Command",
-                    isSelected: selectedIndex == quickActions.count
-                ) {
-                    // Import action
+                // Command items
+                ForEach(Array(commands.enumerated()), id: \.element.id) { index, command in
+                    RaycastRow(
+                        icon: command.icon,
+                        iconColor: command.color,
+                        title: command.title,
+                        subtitle: command.subtitle,
+                        accessoryText: "Command",
+                        isSelected: selectedIndex == quickActions.count + index
+                    ) {
+                        handleCommand(command.id)
+                    }
                 }
             }
             .padding(.bottom, 8)
         }
+    }
+    
+    private func handleCommand(_ id: String) {
+        switch id {
+        case "calculator":
+            // Open Calculator app
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.calculator") {
+                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            }
+        case "clipboard":
+            // Show clipboard history (placeholder - future feature)
+            print("Clipboard history")
+        case "colorpicker":
+            // Open color picker
+            NSColorPanel.shared.makeKeyAndOrderFront(nil)
+        default:
+            break
+        }
+        onDismiss()
     }
     
     private var noResultsView: some View {
@@ -551,7 +580,7 @@ struct RaycastPanelContent: View {
             // Chat header
             HStack {
                 Button { 
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                    withAnimation(.easeOut(duration: 0.2)) {
                         showChat = false
                         chatMessages = []
                     }
@@ -622,11 +651,30 @@ struct RaycastPanelContent: View {
     
     private var actionBarView: some View {
         HStack(spacing: 0) {
-            // Left side - status icon
-            HStack(spacing: 6) {
+            // Left side - status and navigation
+            HStack(spacing: 12) {
+                // Status icon
                 Image(systemName: sidecarManager.isHealthy ? "bolt.fill" : "bolt.slash")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(sidecarManager.isHealthy ? Color(white: 0.35) : .orange)
+                
+                // Navigation arrows
+                HStack(spacing: 4) {
+                    HStack(spacing: 2) {
+                        Image(systemName: "chevron.up")
+                            .font(.system(size: 9, weight: .bold))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .bold))
+                    }
+                    .foregroundStyle(Color(white: 0.3))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 3)
+                    .background(Color(white: 0.82), in: RoundedRectangle(cornerRadius: 4))
+                    
+                    Text("Navigate")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color(white: 0.35))
+                }
             }
             
             Spacer()
@@ -635,7 +683,7 @@ struct RaycastPanelContent: View {
             HStack(spacing: 16) {
                 // Open Command action
                 HStack(spacing: 6) {
-                    Text("Open Command")
+                    Text("Open")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color(white: 0.35))
                     
@@ -689,7 +737,7 @@ struct RaycastPanelContent: View {
     }
     
     private func handleQuickAction(_ id: String) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+        withAnimation(.easeInOut(duration: 0.25)) {
             switch id {
             case "chat":
                 searchMode = .chat
