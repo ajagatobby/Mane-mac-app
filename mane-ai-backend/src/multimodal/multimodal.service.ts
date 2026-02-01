@@ -49,6 +49,14 @@ export class MultimodalService implements OnModuleInit {
     '.cpp',
     '.h',
     '.csv',
+    '.pdf',
+    '.docx',
+    '.doc',
+    '.xlsx',
+    '.xls',
+    '.pptx',
+    '.ppt',
+    '.rtf',
   ];
 
   async onModuleInit() {

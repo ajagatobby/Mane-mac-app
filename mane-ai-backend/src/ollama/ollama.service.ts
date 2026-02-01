@@ -288,8 +288,7 @@ export class OllamaService implements OnModuleInit {
     context: string,
     stats: { total: number; byType: { text: number; image: number; audio: number } },
   ): string {
-    return `You are a helpful AI assistant that helps users organize and understand their files. 
-You have access to the user's document library and can answer questions based on the content of their files.
+    return `You are a helpful AI assistant that answers questions about the user's files.
 
 KNOWLEDGE BASE STATISTICS:
 - Total documents: ${stats.total}
@@ -301,14 +300,11 @@ RELEVANT DOCUMENTS (showing up to 5 most relevant):
 ${context}
 
 INSTRUCTIONS:
-1. Answer the user's question based primarily on the context provided above.
-2. When asked "how many files/documents" use the KNOWLEDGE BASE STATISTICS above, not just the relevant documents shown.
-3. If the context contains relevant information, cite which document(s) you're referencing.
-4. If the context doesn't contain enough information to fully answer the question, say so clearly.
-5. Be concise but thorough in your responses.
-6. If asked about file organization, provide practical suggestions based on the documents you see.
-
-Remember: You're helping the user understand and organize THEIR files, so be specific and actionable.`;
+1. Answer the user's question directly based on the context above.
+2. When asked "how many files/documents" use the KNOWLEDGE BASE STATISTICS above.
+3. Cite which document(s) you're referencing when relevant.
+4. If the context doesn't contain enough information, say so.
+5. Be concise. Do NOT suggest how to organize files.`;
   }
 
   getStatus(): { available: boolean; model: string; url: string } {

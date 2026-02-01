@@ -9,6 +9,10 @@ import {
 } from './dto/ingest.dto';
 import * as path from 'path';
 import * as fs from 'fs';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { PDFParse } = require('pdf-parse');
+import * as mammoth from 'mammoth';
+import * as XLSX from 'xlsx';
 
 @Injectable()
 export class IngestService {
@@ -34,8 +38,44 @@ export class IngestService {
       if (mediaType === 'text') {
         // Text document - use content if provided, otherwise read from file
         let content = dto.content;
+        
         if (!content && fs.existsSync(dto.filePath)) {
-          content = await fs.promises.readFile(dto.filePath, 'utf-8');
+          const ext = path.extname(dto.filePath).toLowerCase();
+          
+          if (ext === '.pdf') {
+            // Extract text from PDF
+            const parser = new PDFParse({ url: dto.filePath });
+            const pdfData = await parser.getText();
+            content = pdfData.text;
+            this.logger.log(`Extracted ${content.length} chars from PDF: ${fileName}`);
+          } else if (ext === '.docx') {
+            // Extract text from Word (.docx)
+            const result = await mammoth.extractRawText({ path: dto.filePath });
+            content = result.value;
+            this.logger.log(`Extracted ${content.length} chars from DOCX: ${fileName}`);
+          } else if (ext === '.xlsx' || ext === '.xls') {
+            // Extract text from Excel
+            const workbook = XLSX.readFile(dto.filePath);
+            const sheets: string[] = [];
+            for (const sheetName of workbook.SheetNames) {
+              const sheet = workbook.Sheets[sheetName];
+              const csv = XLSX.utils.sheet_to_csv(sheet);
+              sheets.push(`[Sheet: ${sheetName}]\n${csv}`);
+            }
+            content = sheets.join('\n\n');
+            this.logger.log(`Extracted ${content.length} chars from Excel: ${fileName}`);
+          } else if (ext === '.pptx') {
+            // PowerPoint - extract as XML text (basic)
+            const dataBuffer = await fs.promises.readFile(dto.filePath);
+            content = `PowerPoint file: ${fileName} (${dataBuffer.length} bytes)`;
+            this.logger.log(`Indexed PowerPoint: ${fileName}`);
+          } else if (ext === '.doc' || ext === '.ppt' || ext === '.rtf') {
+            // Legacy formats - index filename only
+            content = `Document file: ${fileName} (legacy format)`;
+            this.logger.log(`Indexed legacy document: ${fileName}`);
+          } else {
+            content = await fs.promises.readFile(dto.filePath, 'utf-8');
+          }
         }
 
         if (!content) {

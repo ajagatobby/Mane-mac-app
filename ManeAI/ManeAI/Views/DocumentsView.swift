@@ -222,6 +222,8 @@ struct DocumentsView: View {
     private static let supportedExtensions = [
         // Text files
         "txt", "md", "swift", "ts", "js", "py", "json", "yaml", "yml", "xml", "html", "css", "csv",
+        // Documents
+        "pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt", "rtf",
         // Images
         "png", "jpg", "jpeg", "gif", "webp", "heic",
         // Audio
@@ -288,8 +290,8 @@ struct DocumentsView: View {
                 
                 let response: IngestResponse
                 
-                if mediaType == .text {
-                    // Text files - read content
+                if mediaType == .text && !isBinaryDocument(url) {
+                    // Plain text files - read content directly
                     let content = try SecurityBookmarks.shared.readFile(at: url)
                     response = try await apiService.ingestDocument(
                         content: content,
@@ -301,7 +303,7 @@ struct DocumentsView: View {
                         ]
                     )
                 } else {
-                    // Media files - just pass the path
+                    // Media files and binary docs (PDF, Word, Excel) - backend handles extraction
                     response = try await apiService.ingestMediaFile(
                         filePath: url.path,
                         mediaType: mediaType,
@@ -349,6 +351,11 @@ struct DocumentsView: View {
         if imageExtensions.contains(ext) { return .image }
         if audioExtensions.contains(ext) { return .audio }
         return .text
+    }
+    
+    private func isBinaryDocument(_ url: URL) -> Bool {
+        let binaryDocs = ["pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt", "rtf"]
+        return binaryDocs.contains(url.pathExtension.lowercased())
     }
     
     private func deleteDocument(_ document: Document) async {
