@@ -424,6 +424,7 @@ struct RaycastPanelContent: View {
     @State private var streamingContent = ""
     @State private var isStreaming = false
     @State private var isTranscribing = false
+    @State private var isSummarizing = false
     @State private var attachedFile: URL? = nil
     @State private var attachedFileIndexed = false
     @State private var attachedFileId: String? = nil
@@ -1317,6 +1318,7 @@ struct RaycastPanelContent: View {
                         streamingContent = ""
                         isStreaming = false
                         isTranscribing = false
+                        isSummarizing = false
                         attachedFile = nil
                         attachedFileIndexed = false
                         attachedFileId = nil
@@ -1463,6 +1465,9 @@ struct RaycastPanelContent: View {
                             if isStreaming {
                                 if isTranscribing {
                                     TranscriptionShimmerBubble()
+                                        .id("streaming")
+                                } else if isSummarizing && streamingContent.isEmpty {
+                                    SummarizationShimmerBubble()
                                         .id("streaming")
                                 } else {
                                     StreamingChatBubble(content: streamingContent)
@@ -1983,6 +1988,10 @@ struct RaycastPanelContent: View {
                 }
                 
                 chatMessages.append(ChatMessage(content: q, isUser: true))
+                // Set summarizing state if using Summarize tool
+                if tool.prefix == "Summarize:" {
+                    isSummarizing = true
+                }
                 // Pass the document ID to restrict search to ONLY this document
                 streamChatResponse(query: contextQuery, documentIds: attachedFileId.map { [$0] })
                 
@@ -2036,12 +2045,14 @@ struct RaycastPanelContent: View {
                     chatMessages.append(ChatMessage(content: streamingContent, isUser: false, sources: sources))
                     streamingContent = ""
                     isStreaming = false
+                    isSummarizing = false
                 }
             } catch {
                 await MainActor.run {
                     chatMessages.append(ChatMessage(content: "Error: \(error.localizedDescription)", isUser: false))
                     streamingContent = ""
                     isStreaming = false
+                    isSummarizing = false
                 }
             }
         }
@@ -2844,6 +2855,158 @@ struct ShimmerLine: View {
                     shimmerOffset = width + 30
                 }
             }
+    }
+}
+
+// MARK: - Summarization Shimmer Bubble
+
+struct SummarizationShimmerBubble: View {
+    @State private var shimmerOffset: CGFloat = -200
+    @State private var textShimmerOffset: CGFloat = 0
+    
+    // Gradient colors for summarize (coral/red theme)
+    private let gradientColors = [Color(red: 0.95, green: 0.35, blue: 0.45), Color(red: 0.85, green: 0.25, blue: 0.4)]
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            // AI avatar with document icon for summarization
+            ZStack {
+                Image(systemName: "text.alignleft")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 24, height: 24)
+            .background(
+                LinearGradient(
+                    colors: gradientColors,
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+            
+            VStack(alignment: .leading, spacing: 4) {
+                // Animated "Summarizing" text with shimmer
+                HStack(spacing: 0) {
+                    Text("Summarizing")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [
+                                    gradientColors[0].opacity(0.8 + 0.2 * Darwin.sin(Double(textShimmerOffset))),
+                                    gradientColors[1]
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                    
+                    // Animated dots
+                    SummarizingDots()
+                }
+                
+                // Shimmer content - text summary placeholder
+                VStack(alignment: .leading, spacing: 8) {
+                    // Document icon with pulse
+                    HStack(spacing: 8) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(gradientColors[0].opacity(0.15))
+                                .frame(width: 32, height: 32)
+                            
+                            Image(systemName: "doc.text")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(gradientColors[0])
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 3) {
+                            ShimmerLine(width: 120)
+                            ShimmerLine(width: 80)
+                        }
+                    }
+                    
+                    // Divider
+                    Rectangle()
+                        .fill(Color(white: 0.85))
+                        .frame(height: 1)
+                        .padding(.vertical, 4)
+                    
+                    // Summary placeholder lines with staggered widths
+                    VStack(alignment: .leading, spacing: 6) {
+                        ShimmerLine(width: 300)
+                        ShimmerLine(width: 260)
+                        ShimmerLine(width: 280)
+                        ShimmerLine(width: 200)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(white: 0.88))
+                        .overlay(
+                            // Shimmer overlay
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            Color.white.opacity(0),
+                                            Color.white.opacity(0.3),
+                                            Color.white.opacity(0)
+                                        ],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .offset(x: shimmerOffset)
+                                .mask(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        )
+                )
+            }
+            .frame(maxWidth: 380, alignment: .leading)
+            
+            Spacer(minLength: 60)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear {
+            withAnimation(.linear(duration: 1.8).repeatForever(autoreverses: false)) {
+                shimmerOffset = 450
+            }
+            withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                textShimmerOffset = .pi
+            }
+        }
+    }
+}
+
+// Animated dots for "Summarizing..."
+struct SummarizingDots: View {
+    @State private var dotOpacities: [Double] = [0.3, 0.3, 0.3]
+    
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(0..<3, id: \.self) { index in
+                Text(".")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color(red: 0.95, green: 0.35, blue: 0.45))
+                    .opacity(dotOpacities[index])
+            }
+        }
+        .onAppear {
+            animateDots()
+        }
+    }
+    
+    private func animateDots() {
+        for index in 0..<3 {
+            withAnimation(
+                .easeInOut(duration: 0.5)
+                .repeatForever(autoreverses: true)
+                .delay(Double(index) * 0.2)
+            ) {
+                dotOpacities[index] = 1.0
+            }
+        }
     }
 }
 
