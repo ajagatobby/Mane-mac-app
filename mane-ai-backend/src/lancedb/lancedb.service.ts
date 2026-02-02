@@ -356,38 +356,40 @@ export class LanceDBService implements OnModuleInit {
       throw new Error('Text table not initialized');
     }
 
-    // If documentIds are provided, fetch those specific documents instead of searching
+    // If documentIds are provided, fetch those specific documents (and all chunks for same file)
     if (documentIds && documentIds.length > 0) {
       this.logger.log(`Filtering search to ${documentIds.length} specific document(s)`);
-      const filteredResults: SearchResult[] = [];
-      
+      const expandedIds = new Set<string>();
+      const allDocs = await this.textTable.query().limit(10000).toArray();
+      const allRows = allDocs as any[];
+
       for (const docId of documentIds) {
-        try {
-          // Query for the specific document by ID
-          const docs = await this.textTable
-            .query()
-            .where(`id = "${docId}"`)
-            .limit(1)
-            .toArray();
-          
-          if (docs.length > 0) {
-            const row = docs[0] as any;
-            filteredResults.push({
-              id: row.id,
-              content: row.content,
-              filePath: row.filePath,
-              fileName: row.fileName,
-              mediaType: row.mediaType || 'text',
-              thumbnailPath: row.thumbnailPath,
-              metadata: this.parseMetadata(row.metadata),
-              score: 1.0, // Max relevance since explicitly requested
-            });
-          }
-        } catch (err: any) {
-          this.logger.warn(`Failed to fetch document ${docId}: ${err.message}`);
+        const doc = allRows.find((r) => r.id === docId);
+        if (doc) {
+          const filePath = doc.filePath;
+          allRows
+            .filter((r) => r.filePath === filePath)
+            .forEach((r) => expandedIds.add(r.id));
+        } else {
+          expandedIds.add(docId);
         }
       }
-      
+
+      const filteredResults: SearchResult[] = [];
+      for (const row of allRows) {
+        if (expandedIds.has(row.id)) {
+          filteredResults.push({
+            id: row.id,
+            content: row.content,
+            filePath: row.filePath,
+            fileName: row.fileName,
+            mediaType: row.mediaType || 'text',
+            thumbnailPath: row.thumbnailPath,
+            metadata: this.parseMetadata(row.metadata),
+            score: 1.0,
+          });
+        }
+      }
       return filteredResults;
     }
 
@@ -439,16 +441,55 @@ export class LanceDBService implements OnModuleInit {
   }
 
   /**
-   * Delete a document by ID
+   * Delete a document by ID. If the document is part of a chunked file,
+   * deletes all chunks for that file.
    */
   async deleteDocument(id: string): Promise<void> {
-    if (this.textTable) {
-      try {
-        await this.textTable.delete(`id = "${id}"`);
-        this.logger.log(`Document deleted: ${id}`);
-      } catch (e) {
-        this.logger.warn(`Failed to delete document ${id}: ${e}`);
+    if (!this.textTable) return;
+    try {
+      const docs = await this.textTable
+        .query()
+        .where(`id = "${id}"`)
+        .limit(1)
+        .toArray();
+      if (docs.length === 0) return;
+      const filePath = (docs[0] as any).filePath;
+      await this.deleteDocumentsByFilePath(filePath);
+      this.logger.log(`Document(s) deleted for: ${filePath}`);
+    } catch (e) {
+      this.logger.warn(`Failed to delete document ${id}: ${e}`);
+    }
+  }
+
+  /**
+   * Delete all documents from the text table
+   */
+  async deleteAllDocuments(): Promise<void> {
+    if (!this.textTable) return;
+    try {
+      await this.textTable.delete('1 = 1');
+      this.logger.log('All documents deleted');
+    } catch (e) {
+      this.logger.warn(`Failed to delete all documents: ${e}`);
+      throw e;
+    }
+  }
+
+  /**
+   * Delete all documents (including chunks) for a given file path
+   */
+  async deleteDocumentsByFilePath(filePath: string): Promise<void> {
+    if (!this.textTable) return;
+    try {
+      const allDocs = await this.textTable.query().limit(10000).toArray();
+      const toDelete = (allDocs as any[]).filter(
+        (row) => row.filePath === filePath,
+      );
+      for (const row of toDelete) {
+        await this.textTable.delete(`id = "${row.id}"`);
       }
+    } catch (e) {
+      this.logger.warn(`Failed to delete documents for ${filePath}: ${e}`);
     }
   }
 
@@ -480,6 +521,31 @@ export class LanceDBService implements OnModuleInit {
       metadata: this.parseMetadata(row.metadata),
       score: 1,
     }));
+  }
+
+  /**
+   * Get unique documents grouped by file path. For chunked documents,
+   * returns one entry per file with all chunk IDs for search filtering.
+   */
+  async getUniqueDocuments(): Promise<
+    Array<SearchResult & { chunkIds?: string[] }>
+  > {
+    const all = await this.getAllDocuments();
+    const byPath = new Map<string, SearchResult[]>();
+    for (const doc of all) {
+      const list = byPath.get(doc.filePath) || [];
+      list.push(doc);
+      byPath.set(doc.filePath, list);
+    }
+    return Array.from(byPath.values()).map((docs) => {
+      const first = docs[0];
+      const chunkIds = docs.map((d) => d.id);
+      return {
+        ...first,
+        id: first.id,
+        chunkIds: docs.length > 1 ? chunkIds : undefined,
+      };
+    });
   }
 
   // ==================== PROJECT METHODS ====================

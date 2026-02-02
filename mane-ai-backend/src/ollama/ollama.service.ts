@@ -316,7 +316,7 @@ export class OllamaService implements OnModuleInit {
     byType: { text: number; image: number; audio: number };
   }> {
     try {
-      const documents = await this.lanceDBService.getAllDocuments();
+      const documents = await this.lanceDBService.getUniqueDocuments();
       const stats = {
         total: documents.length,
         byType: { text: 0, image: 0, audio: 0 },

@@ -100,13 +100,17 @@ export class ImageCaptioningService implements OnModuleInit {
           {
             role: 'user',
             content:
-              'Describe this image in extreme detail for search indexing. List all main objects, people, clothing, colors, backgrounds, and actions. Be specific about visual details. Do not use filler words.',
+              'Describe this image in extreme detail for search indexing. Include: (1) people or humans if present, (2) any animations, motion, or dynamic elements, (3) document type if it shows text/screenshots/files, (4) main objects, clothing, colors, backgrounds, actions, (5) file or image type. Use specific searchable terms: humans, people, characters, animations, document, file, image, picture. Be exhaustive—list everything a user might search for. No filler words.',
             images: [base64Image],
           },
         ],
       });
 
-      const caption = response.message.content.trim();
+      const rawCaption = response.message.content.trim();
+      const fileName = path.basename(imagePath);
+      const ext = path.extname(imagePath).toLowerCase().replace('.', '');
+      const searchablePrefix = `[image, picture, file, ${ext} format, ${fileName}] `;
+      const caption = searchablePrefix + rawCaption;
       this.logger.log(
         `Generated caption (${caption.length} chars): ${caption.substring(0, 100)}...`,
       );
@@ -129,7 +133,7 @@ export class ImageCaptioningService implements OnModuleInit {
   private getFallbackCaption(imagePath: string): string {
     const fileName = path.basename(imagePath);
     const ext = path.extname(imagePath).toLowerCase().replace('.', '');
-    return `Image file: ${fileName} (${ext} format)`;
+    return `[image, picture, file, document, ${ext} format] Image file: ${fileName}`;
   }
 
   /**

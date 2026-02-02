@@ -140,6 +140,20 @@ final class PanelManager: ObservableObject {
     
     // MARK: - Panel Control
     
+    /// Clears SwiftData cache for indexed documents (Document and IndexedFile).
+    /// Call when backend documents are deleted to keep cache in sync.
+    @MainActor
+    func clearIndexedDocumentsCache() {
+        guard let context = modelContainer?.mainContext else { return }
+        do {
+            try context.delete(model: Document.self)
+            try context.delete(model: IndexedFile.self)
+            try context.save()
+        } catch {
+            print("Failed to clear indexed documents cache: \(error)")
+        }
+    }
+    
     func togglePanel() {
         if isPanelVisible {
             hidePanel()
@@ -295,6 +309,7 @@ struct RaycastPanelContent: View {
     @State private var homeIndexingComplete = false
     @State private var homeIndexingTotal = 0
     @State private var homeIndexingCurrent = 0
+    @State private var showSettings = false
     @FocusState private var focused: Bool
     
     // Animation namespace for morphing effects
@@ -504,6 +519,14 @@ struct RaycastPanelContent: View {
                 showChat = false
                 search(searchQuery)
             }
+        }
+        .sheet(isPresented: $showSettings) {
+            OverlaySettingsView()
+                .environmentObject(sidecarManager)
+                .environmentObject(apiService)
+        }
+        .onChange(of: showSettings) { _, isShowing in
+            PanelManager.shared.panel?.preventDismiss = isShowing
         }
     }
     
@@ -1613,6 +1636,23 @@ struct RaycastPanelContent: View {
                     .padding(.vertical, 3)
                     .background(Color(white: 0.80), in: RoundedRectangle(cornerRadius: 5))
                 }
+                
+                // Divider
+                Rectangle()
+                    .fill(Color(white: 0.72))
+                    .frame(width: 1, height: 18)
+                
+                // Settings button
+                Button {
+                    showSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Color(white: 0.35))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Settings")
             }
         }
         .padding(.horizontal, 16)

@@ -296,6 +296,10 @@ class APIService: ObservableObject {
         let _: SuccessResponse = try await delete(path: "/documents/\(id)")
     }
     
+    func deleteAllDocuments() async throws {
+        let _: SuccessResponse = try await delete(path: "/documents/all")
+    }
+    
     // MARK: - Chat Endpoints
     
     func chat(query: String, documentIds: [String]? = nil) async throws -> ChatResponse {

@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var ollamaStatus: OllamaStatus?
     @State private var documentCount = 0
     @State private var showLogs = false
+    @State private var showDeleteAllConfirmation = false
     
     var body: some View {
         Form {
@@ -42,7 +43,7 @@ struct SettingsView: View {
                     }
                 }
                 
-                LabeledContent("Documents") {
+                LabeledContent("Total Indexed Documents") {
                     Text("\(documentCount)")
                 }
             }
@@ -68,6 +69,11 @@ struct SettingsView: View {
                 Button("View Logs") {
                     showLogs = true
                 }
+                
+                Button("Delete All Indexed Documents", role: .destructive) {
+                    showDeleteAllConfirmation = true
+                }
+                .disabled(documentCount == 0)
             }
             
             // About Section
@@ -105,6 +111,16 @@ struct SettingsView: View {
         .sheet(isPresented: $showLogs) {
             LogsView()
         }
+        .confirmationDialog("Delete All Indexed Documents", isPresented: $showDeleteAllConfirmation, titleVisibility: .visible) {
+            Button("Delete All (\(documentCount) documents)", role: .destructive) {
+                Task {
+                    await deleteAllDocuments()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently delete all \(documentCount) documents from your knowledge base. This action cannot be undone.")
+        }
         .task {
             await checkOllamaStatus()
             await loadDocumentCount()
@@ -131,7 +147,26 @@ struct SettingsView: View {
     
     private func loadDocumentCount() async {
         do {
-            documentCount = try await apiService.getDocumentCount()
+            let count = try await apiService.getDocumentCount()
+            documentCount = count
+            // If backend has no documents, clear local cache to stay in sync
+            if count == 0 {
+                await MainActor.run {
+                    PanelManager.shared.clearIndexedDocumentsCache()
+                }
+            }
+        } catch {
+            documentCount = 0
+        }
+    }
+    
+    private func deleteAllDocuments() async {
+        do {
+            try await apiService.deleteAllDocuments()
+            await MainActor.run {
+                PanelManager.shared.clearIndexedDocumentsCache()
+            }
+            await loadDocumentCount()
         } catch {
             documentCount = 0
         }

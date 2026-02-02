@@ -19,6 +19,12 @@ export class DocumentsController {
     return this.ingestService.listDocuments();
   }
 
+  @Delete('all')
+  @HttpCode(HttpStatus.OK)
+  async deleteAllDocuments(): Promise<{ success: boolean; message: string }> {
+    return this.ingestService.deleteAllDocuments();
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   async deleteDocument(

@@ -41,6 +41,8 @@ export class DocumentListResponseDto {
     mediaType: MediaType;
     thumbnailPath?: string;
     metadata: Record<string, unknown>;
+    /** All chunk IDs for this file (when chunked). Use these for search filtering. */
+    chunkIds?: string[];
   }>;
   total: number;
 }

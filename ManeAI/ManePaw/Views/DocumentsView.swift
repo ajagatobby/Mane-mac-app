@@ -445,20 +445,12 @@ struct DocumentsView: View {
         isLoading = true
         defer { isLoading = false }
         
-        for document in documents {
-            // Try to delete from backend, but ignore 404 errors (already deleted)
-            do {
-                try await apiService.deleteDocument(id: document.id)
-            } catch {
-                // Ignore - document may already be deleted from backend
-                print("Backend delete skipped for \(document.fileName): \(error.localizedDescription)")
-            }
-            
-            // Always delete from local SwiftData
-            modelContext.delete(document)
+        do {
+            try await apiService.deleteAllDocuments()
+            PanelManager.shared.clearIndexedDocumentsCache()
+        } catch {
+            print("Failed to delete all documents: \(error.localizedDescription)")
         }
-        
-        try? modelContext.save()
         selectedDocument = nil
     }
     

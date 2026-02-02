@@ -14,9 +14,40 @@ const { PDFParse } = require('pdf-parse');
 import * as mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 
+const CHUNK_WORD_COUNT = 280;
+const CHUNK_OVERLAP_WORDS = 50;
+const MIN_CONTENT_FOR_CHUNKING = 800;
+
 @Injectable()
 export class IngestService {
   private readonly logger = new Logger(IngestService.name);
+
+  private enrichContent(
+    content: string,
+    filePath: string,
+    docType: string,
+  ): string {
+    const fileName = path.basename(filePath);
+    const ext = path.extname(filePath).toLowerCase().replace('.', '') || 'text';
+    const prefix = `[document, file, ${docType}, ${ext} format, ${fileName}] `;
+    return prefix + content;
+  }
+
+  private chunkText(text: string): string[] {
+    const words = text.split(/\s+/).filter((w) => w.length > 0);
+    if (words.length <= CHUNK_WORD_COUNT) return [text];
+
+    const chunks: string[] = [];
+    let start = 0;
+    while (start < words.length) {
+      const end = Math.min(start + CHUNK_WORD_COUNT, words.length);
+      const chunkWords = words.slice(start, end);
+      chunks.push(chunkWords.join(' '));
+      start = end - CHUNK_OVERLAP_WORDS;
+      if (start >= words.length) break;
+    }
+    return chunks;
+  }
 
   constructor(
     private readonly lanceDBService: LanceDBService,
@@ -67,11 +98,11 @@ export class IngestService {
           } else if (ext === '.pptx') {
             // PowerPoint - extract as XML text (basic)
             const dataBuffer = await fs.promises.readFile(dto.filePath);
-            content = `PowerPoint file: ${fileName} (${dataBuffer.length} bytes)`;
+            content = `[document, file, presentation, slides, pptx format] PowerPoint presentation: ${fileName}. Contains slides and visual content.`;
             this.logger.log(`Indexed PowerPoint: ${fileName}`);
           } else if (ext === '.doc' || ext === '.ppt' || ext === '.rtf') {
-            // Legacy formats - index filename only
-            content = `Document file: ${fileName} (legacy format)`;
+            // Legacy formats - index filename with searchable terms
+            content = `[document, file, ${ext.replace('.', '')} format] Document file: ${fileName}. Legacy document format.`;
             this.logger.log(`Indexed legacy document: ${fileName}`);
           } else {
             content = await fs.promises.readFile(dto.filePath, 'utf-8');
@@ -82,11 +113,30 @@ export class IngestService {
           throw new Error('Content is required for text documents');
         }
 
-        id = await this.lanceDBService.addTextDocument(
-          content,
-          dto.filePath,
-          dto.metadata || {},
-        );
+        const ext = path.extname(dto.filePath).toLowerCase().replace('.', '') || 'text';
+        const docType = ext === 'pdf' ? 'pdf' : ext === 'docx' ? 'word' : ext === 'xlsx' || ext === 'xls' ? 'spreadsheet' : 'text';
+
+        const shouldChunk = content.length >= MIN_CONTENT_FOR_CHUNKING;
+        const chunks = shouldChunk ? this.chunkText(content) : [content];
+
+        const ids: string[] = [];
+        for (let i = 0; i < chunks.length; i++) {
+          const chunkContent = this.enrichContent(chunks[i], dto.filePath, docType);
+          const chunkMetadata = {
+            ...dto.metadata,
+            ...(chunks.length > 1 && { chunkIndex: i, totalChunks: chunks.length }),
+          };
+          const chunkId = await this.lanceDBService.addTextDocument(
+            chunkContent,
+            dto.filePath,
+            chunkMetadata,
+          );
+          ids.push(chunkId);
+        }
+        id = ids[0];
+        if (chunks.length > 1) {
+          this.logger.log(`Indexed ${fileName} as ${chunks.length} chunks for better search`);
+        }
       } else if (mediaType === 'audio') {
         // Audio file - transcribe with Whisper, embed with MiniLM (384-dim)
         // Store in text table since it uses text embeddings
@@ -95,13 +145,18 @@ export class IngestService {
         }
 
         const processed = await this.multimodalService.processFile(dto.filePath);
+        const enrichedContent = this.enrichContent(
+          processed.content,
+          dto.filePath,
+          'audio transcript',
+        );
 
         // Store in text table with pre-computed vector and audio metadata
         id = await this.lanceDBService.addTextDocument(
-          processed.content, // transcript
+          enrichedContent,
           dto.filePath,
           { ...dto.metadata, mediaType: 'audio' },
-          processed.vector, // 384-dim MiniLM vector
+          undefined, // Re-embed with enriched content for better search
         );
       } else if (mediaType === 'image') {
         // Image files - caption with Moondream, embed with MiniLM (384-dim)
@@ -159,10 +214,25 @@ export class IngestService {
     }
   }
 
+  async deleteAllDocuments(): Promise<{ success: boolean; message: string }> {
+    try {
+      this.logger.log('Deleting all documents');
+      await this.lanceDBService.deleteAllDocuments();
+
+      return {
+        success: true,
+        message: 'All documents deleted successfully',
+      };
+    } catch (error: any) {
+      this.logger.error(`Failed to delete all documents: ${error.message}`);
+      throw error;
+    }
+  }
+
   async listDocuments(): Promise<DocumentListResponseDto> {
     try {
-      const documents = await this.lanceDBService.getAllDocuments();
-      const total = await this.lanceDBService.getDocumentCount();
+      const documents = await this.lanceDBService.getUniqueDocuments();
+      const total = documents.length;
 
       return {
         documents: documents.map((doc) => ({
@@ -172,6 +242,7 @@ export class IngestService {
           mediaType: (doc.mediaType as MediaType) || 'text',
           thumbnailPath: doc.thumbnailPath,
           metadata: doc.metadata,
+          chunkIds: doc.chunkIds,
         })),
         total,
       };
