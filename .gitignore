@@ -2,6 +2,8 @@
 node_modules/
 .pnpm-store/
 
+maneai-web/
+
 # Build outputs
 dist/
 sidecar/
