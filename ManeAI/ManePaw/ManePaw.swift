@@ -1406,6 +1406,8 @@ struct ChatBubble: View {
 struct StreamingChatBubble: View {
     let content: String
     
+    private var isTyping: Bool { content.isEmpty }
+    
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             // AI avatar
@@ -1423,21 +1425,27 @@ struct StreamingChatBubble: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Color(white: 0.45))
                 
-                // Message bubble with content or typing indicator
-                HStack(spacing: 6) {
-                    if content.isEmpty {
-                        // Typing indicator dots
-                        TypingIndicator()
-                    } else {
-                        Text(content)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color(white: 0.1))
-                            .textSelection(.enabled)
-                    }
+                // Message bubble with morphing content
+                ZStack(alignment: .leading) {
+                    // Typing indicator - fades out when content arrives
+                    TypingIndicator()
+                        .opacity(isTyping ? 1 : 0)
+                        .blur(radius: isTyping ? 0 : 8)
+                        .scaleEffect(isTyping ? 1 : 0.85)
+                    
+                    // Text content - fades in when content arrives
+                    Text(content)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color(white: 0.1))
+                        .textSelection(.enabled)
+                        .opacity(isTyping ? 0 : 1)
+                        .blur(radius: isTyping ? 8 : 0)
+                        .scaleEffect(isTyping ? 0.96 : 1)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(Color(white: 0.88), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .animation(.spring(response: 0.4, dampingFraction: 0.95), value: isTyping)
             }
             .frame(maxWidth: 400, alignment: .leading)
             
