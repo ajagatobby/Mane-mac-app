@@ -2475,6 +2475,683 @@ struct SearchResultRow: View {
     }
 }
 
+// MARK: - Advanced Markdown Text Renderer
+
+struct MarkdownText: View {
+    let content: String
+    
+    // Theme colors
+    private let textColor = Color(white: 0.1)
+    private let mutedColor = Color(white: 0.4)
+    private let codeBackground = Color(white: 0.94)
+    private let blockquoteBorder = Color(red: 0.95, green: 0.3, blue: 0.35)
+    private let linkColor = Color(red: 0.2, green: 0.5, blue: 0.95)
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(parseBlocks().enumerated()), id: \.offset) { _, block in
+                renderBlock(block)
+            }
+        }
+    }
+    
+    // MARK: - Block Types
+    
+    private enum MarkdownBlock: Equatable {
+        case paragraph(String)
+        case header(level: Int, text: String)
+        case codeBlock(language: String?, code: String)
+        case blockquote(lines: [String])
+        case bulletList(items: [ListItem])
+        case numberedList(items: [ListItem])
+        case horizontalRule
+        case table(headers: [String], rows: [[String]])
+        case taskList(items: [(checked: Bool, text: String)])
+        
+        static func == (lhs: MarkdownBlock, rhs: MarkdownBlock) -> Bool {
+            switch (lhs, rhs) {
+            case (.paragraph(let a), .paragraph(let b)): return a == b
+            case (.header(let l1, let t1), .header(let l2, let t2)): return l1 == l2 && t1 == t2
+            case (.codeBlock(let l1, let c1), .codeBlock(let l2, let c2)): return l1 == l2 && c1 == c2
+            case (.blockquote(let a), .blockquote(let b)): return a == b
+            case (.horizontalRule, .horizontalRule): return true
+            default: return false
+            }
+        }
+    }
+    
+    private struct ListItem: Equatable {
+        let text: String
+        let indent: Int
+        let children: [ListItem]
+    }
+    
+    // MARK: - Block Parser
+    
+    private func parseBlocks() -> [MarkdownBlock] {
+        var blocks: [MarkdownBlock] = []
+        let lines = content.components(separatedBy: "\n")
+        var i = 0
+        
+        while i < lines.count {
+            let line = lines[i]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            
+            // Skip empty lines
+            if trimmed.isEmpty {
+                i += 1
+                continue
+            }
+            
+            // Fenced code block (```)
+            if trimmed.hasPrefix("```") {
+                let language = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+                var codeLines: [String] = []
+                i += 1
+                while i < lines.count && !lines[i].trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                    codeLines.append(lines[i])
+                    i += 1
+                }
+                blocks.append(.codeBlock(language: language.isEmpty ? nil : language, code: codeLines.joined(separator: "\n")))
+                i += 1
+                continue
+            }
+            
+            // Horizontal rule (---, ***, ___)
+            if trimmed.count >= 3 && (
+                trimmed.allSatisfy({ $0 == "-" || $0 == " " }) && trimmed.filter({ $0 == "-" }).count >= 3 ||
+                trimmed.allSatisfy({ $0 == "*" || $0 == " " }) && trimmed.filter({ $0 == "*" }).count >= 3 ||
+                trimmed.allSatisfy({ $0 == "_" || $0 == " " }) && trimmed.filter({ $0 == "_" }).count >= 3
+            ) {
+                blocks.append(.horizontalRule)
+                i += 1
+                continue
+            }
+            
+            // Headers (# to ######)
+            if let headerMatch = trimmed.range(of: #"^#{1,6}\s+"#, options: .regularExpression) {
+                let level = trimmed[headerMatch].filter({ $0 == "#" }).count
+                let text = String(trimmed[headerMatch.upperBound...])
+                blocks.append(.header(level: level, text: text))
+                i += 1
+                continue
+            }
+            
+            // Blockquote (>)
+            if trimmed.hasPrefix(">") {
+                var quoteLines: [String] = []
+                while i < lines.count {
+                    let quoteLine = lines[i].trimmingCharacters(in: .whitespaces)
+                    if quoteLine.hasPrefix(">") {
+                        let content = quoteLine.dropFirst().trimmingCharacters(in: .whitespaces)
+                        quoteLines.append(content)
+                        i += 1
+                    } else if quoteLine.isEmpty && i + 1 < lines.count && lines[i + 1].trimmingCharacters(in: .whitespaces).hasPrefix(">") {
+                        quoteLines.append("")
+                        i += 1
+                    } else {
+                        break
+                    }
+                }
+                blocks.append(.blockquote(lines: quoteLines))
+                continue
+            }
+            
+            // Table (| header | header |)
+            if trimmed.hasPrefix("|") && trimmed.hasSuffix("|") {
+                var tableLines: [String] = []
+                while i < lines.count {
+                    let tableLine = lines[i].trimmingCharacters(in: .whitespaces)
+                    if tableLine.hasPrefix("|") {
+                        tableLines.append(tableLine)
+                        i += 1
+                    } else {
+                        break
+                    }
+                }
+                if let table = parseTable(tableLines) {
+                    blocks.append(table)
+                }
+                continue
+            }
+            
+            // Task list (- [ ] or - [x])
+            if trimmed.hasPrefix("- [ ]") || trimmed.hasPrefix("- [x]") || trimmed.hasPrefix("- [X]") {
+                var tasks: [(checked: Bool, text: String)] = []
+                while i < lines.count {
+                    let taskLine = lines[i].trimmingCharacters(in: .whitespaces)
+                    if taskLine.hasPrefix("- [ ]") {
+                        tasks.append((checked: false, text: String(taskLine.dropFirst(5)).trimmingCharacters(in: .whitespaces)))
+                        i += 1
+                    } else if taskLine.hasPrefix("- [x]") || taskLine.hasPrefix("- [X]") {
+                        tasks.append((checked: true, text: String(taskLine.dropFirst(5)).trimmingCharacters(in: .whitespaces)))
+                        i += 1
+                    } else {
+                        break
+                    }
+                }
+                if !tasks.isEmpty {
+                    blocks.append(.taskList(items: tasks))
+                }
+                continue
+            }
+            
+            // Bullet list (-, *, +)
+            if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") || trimmed.hasPrefix("+ ") {
+                let (items, newIndex) = parseListItems(lines: lines, startIndex: i, isBullet: true)
+                blocks.append(.bulletList(items: items))
+                i = newIndex
+                continue
+            }
+            
+            // Numbered list (1. 2. etc)
+            if let _ = trimmed.range(of: #"^\d+\.\s"#, options: .regularExpression) {
+                let (items, newIndex) = parseListItems(lines: lines, startIndex: i, isBullet: false)
+                blocks.append(.numberedList(items: items))
+                i = newIndex
+                continue
+            }
+            
+            // Regular paragraph
+            var paragraphLines: [String] = []
+            while i < lines.count {
+                let pLine = lines[i]
+                let pTrimmed = pLine.trimmingCharacters(in: .whitespaces)
+                
+                // Check for block-level interrupts
+                if pTrimmed.isEmpty ||
+                   pTrimmed.hasPrefix("#") ||
+                   pTrimmed.hasPrefix("```") ||
+                   pTrimmed.hasPrefix(">") ||
+                   pTrimmed.hasPrefix("|") ||
+                   pTrimmed.hasPrefix("- ") || pTrimmed.hasPrefix("* ") || pTrimmed.hasPrefix("+ ") ||
+                   pTrimmed.hasPrefix("- [ ]") || pTrimmed.hasPrefix("- [x]") ||
+                   pTrimmed.range(of: #"^\d+\.\s"#, options: .regularExpression) != nil ||
+                   (pTrimmed.count >= 3 && pTrimmed.allSatisfy({ $0 == "-" || $0 == " " }) && pTrimmed.filter({ $0 == "-" }).count >= 3) {
+                    break
+                }
+                paragraphLines.append(pLine)
+                i += 1
+            }
+            if !paragraphLines.isEmpty {
+                blocks.append(.paragraph(paragraphLines.joined(separator: " ")))
+            }
+        }
+        
+        return blocks
+    }
+    
+    private func parseListItems(lines: [String], startIndex: Int, isBullet: Bool) -> ([ListItem], Int) {
+        var items: [ListItem] = []
+        var i = startIndex
+        
+        while i < lines.count {
+            let line = lines[i]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            
+            if trimmed.isEmpty {
+                i += 1
+                continue
+            }
+            
+            let indent = line.prefix(while: { $0 == " " || $0 == "\t" }).count
+            
+            if isBullet {
+                if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") || trimmed.hasPrefix("+ ") {
+                    items.append(ListItem(text: String(trimmed.dropFirst(2)), indent: indent, children: []))
+                    i += 1
+                } else {
+                    break
+                }
+            } else {
+                if let range = trimmed.range(of: #"^\d+\.\s"#, options: .regularExpression) {
+                    items.append(ListItem(text: String(trimmed[range.upperBound...]), indent: indent, children: []))
+                    i += 1
+                } else {
+                    break
+                }
+            }
+        }
+        
+        return (items, i)
+    }
+    
+    private func parseTable(_ lines: [String]) -> MarkdownBlock? {
+        guard lines.count >= 2 else { return nil }
+        
+        func parseCells(_ line: String) -> [String] {
+            line.trimmingCharacters(in: .whitespaces)
+                .dropFirst()
+                .dropLast()
+                .components(separatedBy: "|")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+        }
+        
+        let headers = parseCells(lines[0])
+        
+        // Skip separator line (|---|---|)
+        var dataRows: [[String]] = []
+        for line in lines.dropFirst(2) {
+            dataRows.append(parseCells(line))
+        }
+        
+        return .table(headers: headers, rows: dataRows)
+    }
+    
+    // MARK: - Block Renderers
+    
+    @ViewBuilder
+    private func renderBlock(_ block: MarkdownBlock) -> some View {
+        switch block {
+        case .paragraph(let text):
+            renderInlineMarkdown(text)
+            
+        case .header(let level, let text):
+            VStack(alignment: .leading, spacing: 4) {
+                renderInlineMarkdown(text)
+                    .font(.system(size: headerFontSize(level), weight: headerWeight(level)))
+                
+                if level <= 2 {
+                    Rectangle()
+                        .fill(Color(white: 0.85))
+                        .frame(height: 1)
+                }
+            }
+            .padding(.top, level == 1 ? 8 : 4)
+            
+        case .codeBlock(let language, let code):
+            CodeBlockView(language: language, code: code)
+            
+        case .blockquote(let lines):
+            HStack(spacing: 0) {
+                Rectangle()
+                    .fill(blockquoteBorder)
+                    .frame(width: 3)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                        if line.isEmpty {
+                            Spacer().frame(height: 8)
+                        } else {
+                            renderInlineMarkdown(line)
+                                .foregroundStyle(mutedColor)
+                        }
+                    }
+                }
+                .padding(.leading, 12)
+            }
+            .padding(.vertical, 4)
+            
+        case .bulletList(let items):
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text("•")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(blockquoteBorder)
+                            .frame(width: 12)
+                        renderInlineMarkdown(item.text)
+                    }
+                }
+            }
+            
+        case .numberedList(let items):
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text("\(index + 1).")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundStyle(blockquoteBorder)
+                            .frame(width: 20, alignment: .trailing)
+                        renderInlineMarkdown(item.text)
+                    }
+                }
+            }
+            
+        case .horizontalRule:
+            Rectangle()
+                .fill(Color(white: 0.8))
+                .frame(height: 1)
+                .padding(.vertical, 8)
+            
+        case .table(let headers, let rows):
+            TableView(headers: headers, rows: rows)
+            
+        case .taskList(let items):
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: item.checked ? "checkmark.square.fill" : "square")
+                            .font(.system(size: 14))
+                            .foregroundStyle(item.checked ? Color(red: 0.3, green: 0.75, blue: 0.45) : mutedColor)
+                        renderInlineMarkdown(item.text)
+                            .strikethrough(item.checked, color: mutedColor)
+                            .foregroundStyle(item.checked ? mutedColor : textColor)
+                    }
+                }
+            }
+        }
+    }
+    
+    private func headerFontSize(_ level: Int) -> CGFloat {
+        switch level {
+        case 1: return 20
+        case 2: return 17
+        case 3: return 15
+        case 4: return 14
+        case 5: return 13
+        default: return 12
+        }
+    }
+    
+    private func headerWeight(_ level: Int) -> Font.Weight {
+        switch level {
+        case 1, 2: return .bold
+        case 3: return .semibold
+        default: return .medium
+        }
+    }
+    
+    // MARK: - Inline Markdown
+    
+    @ViewBuilder
+    private func renderInlineMarkdown(_ text: String) -> some View {
+        Text(parseInlineMarkdown(text))
+            .font(.system(size: 13))
+            .foregroundStyle(textColor)
+    }
+    
+    private func parseInlineMarkdown(_ text: String) -> AttributedString {
+        do {
+            var attributed = try AttributedString(markdown: text, options: AttributedString.MarkdownParsingOptions(
+                interpretedSyntax: .inlineOnlyPreservingWhitespace
+            ))
+            
+            // Style inline code and links
+            for run in attributed.runs {
+                let range = run.range
+                
+                // Style inline code with background
+                if run.inlinePresentationIntent?.contains(.code) == true {
+                    attributed[range].font = .system(size: 12, weight: .medium, design: .monospaced)
+                    attributed[range].backgroundColor = codeBackground
+                    attributed[range].foregroundColor = Color(red: 0.85, green: 0.25, blue: 0.35)
+                }
+                
+                // Style links
+                if attributed[range].link != nil {
+                    attributed[range].foregroundColor = linkColor
+                }
+            }
+            
+            return attributed
+        } catch {
+            return AttributedString(text)
+        }
+    }
+}
+
+// MARK: - Code Block View with Syntax Highlighting
+
+private struct CodeBlockView: View {
+    let language: String?
+    let code: String
+    
+    @State private var isHovered = false
+    @State private var showCopied = false
+    
+    private var languageColor: Color {
+        guard let lang = language?.lowercased() else { return Color(white: 0.5) }
+        switch lang {
+        case "swift": return Color(red: 0.95, green: 0.4, blue: 0.2)
+        case "python", "py": return Color(red: 0.3, green: 0.55, blue: 0.85)
+        case "javascript", "js", "typescript", "ts": return Color(red: 0.95, green: 0.8, blue: 0.25)
+        case "rust": return Color(red: 0.85, green: 0.45, blue: 0.25)
+        case "go": return Color(red: 0.0, green: 0.7, blue: 0.85)
+        case "ruby", "rb": return Color(red: 0.85, green: 0.2, blue: 0.2)
+        case "java", "kotlin": return Color(red: 0.6, green: 0.3, blue: 0.0)
+        case "c", "cpp", "c++": return Color(red: 0.3, green: 0.5, blue: 0.8)
+        case "html", "css", "scss": return Color(red: 0.9, green: 0.35, blue: 0.2)
+        case "json", "yaml", "yml": return Color(red: 0.5, green: 0.7, blue: 0.3)
+        case "bash", "sh", "zsh", "shell": return Color(red: 0.3, green: 0.7, blue: 0.4)
+        case "sql": return Color(red: 0.0, green: 0.5, blue: 0.7)
+        default: return Color(white: 0.5)
+        }
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header with language badge and copy button
+            HStack {
+                if let lang = language, !lang.isEmpty {
+                    Text(lang.uppercased())
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(languageColor, in: RoundedRectangle(cornerRadius: 4))
+                }
+                
+                Spacer()
+                
+                // Copy button
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(code, forType: .string)
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        showCopied = true
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            showCopied = false
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 10, weight: .medium))
+                        if showCopied {
+                            Text("Copied")
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                    }
+                    .foregroundStyle(showCopied ? Color(red: 0.3, green: 0.75, blue: 0.45) : Color(white: 0.5))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color(white: 0.88), in: RoundedRectangle(cornerRadius: 4))
+                }
+                .buttonStyle(.plain)
+                .opacity(isHovered || showCopied ? 1 : 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color(white: 0.88))
+            
+            // Code content with syntax highlighting
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(highlightSyntax(code, language: language))
+                    .font(.system(size: 12, design: .monospaced))
+                    .textSelection(.enabled)
+                    .padding(12)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(white: 0.96))
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color(white: 0.85), lineWidth: 1)
+        )
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.15)) {
+                isHovered = hovering
+            }
+        }
+    }
+    
+    private func highlightSyntax(_ code: String, language: String?) -> AttributedString {
+        var attributed = AttributedString(code)
+        
+        guard let lang = language?.lowercased() else {
+            attributed.foregroundColor = Color(white: 0.2)
+            return attributed
+        }
+        
+        // Define syntax patterns
+        let keywords: [String]
+        let commentPattern: String
+        
+        switch lang {
+        case "swift":
+            keywords = ["func", "var", "let", "if", "else", "for", "while", "return", "import", "struct", "class", "enum", "case", "switch", "guard", "self", "Self", "private", "public", "internal", "fileprivate", "static", "override", "init", "deinit", "extension", "protocol", "typealias", "associatedtype", "where", "throws", "throw", "try", "catch", "async", "await", "actor", "@State", "@Binding", "@Published", "@ObservedObject", "@StateObject", "@Environment", "some", "any", "nil", "true", "false", "in", "is", "as", "do", "@ViewBuilder", "@MainActor"]
+            commentPattern = "//.*"
+        case "python", "py":
+            keywords = ["def", "class", "if", "elif", "else", "for", "while", "return", "import", "from", "as", "try", "except", "finally", "with", "lambda", "yield", "pass", "break", "continue", "and", "or", "not", "in", "is", "None", "True", "False", "self", "async", "await", "raise", "global", "nonlocal"]
+            commentPattern = "#.*"
+        case "javascript", "js", "typescript", "ts":
+            keywords = ["function", "const", "let", "var", "if", "else", "for", "while", "return", "import", "export", "from", "class", "extends", "new", "this", "super", "async", "await", "try", "catch", "finally", "throw", "typeof", "instanceof", "null", "undefined", "true", "false", "interface", "type", "enum", "implements", "public", "private", "protected", "readonly", "static", "abstract", "default", "switch", "case", "break", "continue"]
+            commentPattern = "//.*"
+        case "rust":
+            keywords = ["fn", "let", "mut", "const", "if", "else", "for", "while", "loop", "return", "use", "mod", "pub", "struct", "enum", "impl", "trait", "where", "self", "Self", "match", "async", "await", "move", "ref", "static", "unsafe", "extern", "crate", "super", "type", "dyn", "true", "false", "Some", "None", "Ok", "Err"]
+            commentPattern = "//.*"
+        case "go":
+            keywords = ["func", "var", "const", "if", "else", "for", "range", "return", "import", "package", "struct", "interface", "type", "switch", "case", "default", "go", "chan", "select", "defer", "make", "new", "map", "nil", "true", "false", "break", "continue", "fallthrough"]
+            commentPattern = "//.*"
+        default:
+            attributed.foregroundColor = Color(white: 0.2)
+            return attributed
+        }
+        
+        // Apply base color
+        attributed.foregroundColor = Color(white: 0.25)
+        
+        // Highlight strings
+        highlightPattern(&attributed, pattern: #"\"[^\"]*\""#, color: Color(red: 0.75, green: 0.35, blue: 0.2))
+        highlightPattern(&attributed, pattern: #"'[^']*'"#, color: Color(red: 0.75, green: 0.35, blue: 0.2))
+        
+        // Highlight numbers
+        highlightPattern(&attributed, pattern: #"\b\d+\.?\d*\b"#, color: Color(red: 0.7, green: 0.5, blue: 0.2))
+        
+        // Highlight keywords
+        for keyword in keywords {
+            highlightPattern(&attributed, pattern: "\\b\(NSRegularExpression.escapedPattern(for: keyword))\\b", color: Color(red: 0.6, green: 0.2, blue: 0.7))
+        }
+        
+        // Highlight comments (should be last to override other highlighting)
+        highlightPattern(&attributed, pattern: commentPattern, color: Color(white: 0.55))
+        
+        return attributed
+    }
+    
+    private func highlightPattern(_ attributed: inout AttributedString, pattern: String, color: Color) {
+        let plainString = String(attributed.characters)
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return }
+        
+        let nsRange = NSRange(plainString.startIndex..., in: plainString)
+        let matches = regex.matches(in: plainString, options: [], range: nsRange)
+        
+        for match in matches {
+            guard let stringRange = Range(match.range, in: plainString) else { continue }
+            
+            // Convert String.Index range to AttributedString range
+            let startOffset = plainString.distance(from: plainString.startIndex, to: stringRange.lowerBound)
+            let endOffset = plainString.distance(from: plainString.startIndex, to: stringRange.upperBound)
+            
+            // Get AttributedString indices by iterating through characters
+            var currentIndex = attributed.startIndex
+            var charCount = 0
+            var startAttrIndex: AttributedString.Index?
+            var endAttrIndex: AttributedString.Index?
+            
+            while currentIndex < attributed.endIndex {
+                if charCount == startOffset {
+                    startAttrIndex = currentIndex
+                }
+                if charCount == endOffset {
+                    endAttrIndex = currentIndex
+                    break
+                }
+                currentIndex = attributed.index(afterCharacter: currentIndex)
+                charCount += 1
+            }
+            
+            if endAttrIndex == nil && charCount == endOffset {
+                endAttrIndex = attributed.endIndex
+            }
+            
+            if let start = startAttrIndex, let end = endAttrIndex {
+                attributed[start..<end].foregroundColor = color
+            }
+        }
+    }
+}
+
+// MARK: - Table View
+
+private struct TableView: View {
+    let headers: [String]
+    let rows: [[String]]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header row
+            HStack(spacing: 0) {
+                ForEach(Array(headers.enumerated()), id: \.offset) { index, header in
+                    Text(header)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color(white: 0.2))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(white: 0.92))
+                    
+                    if index < headers.count - 1 {
+                        Rectangle()
+                            .fill(Color(white: 0.85))
+                            .frame(width: 1)
+                    }
+                }
+            }
+            
+            Rectangle()
+                .fill(Color(white: 0.8))
+                .frame(height: 1)
+            
+            // Data rows
+            ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
+                HStack(spacing: 0) {
+                    ForEach(Array(row.enumerated()), id: \.offset) { colIndex, cell in
+                        Text(cell)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color(white: 0.3))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(rowIndex % 2 == 0 ? Color.white : Color(white: 0.98))
+                        
+                        if colIndex < row.count - 1 {
+                            Rectangle()
+                                .fill(Color(white: 0.9))
+                                .frame(width: 1)
+                        }
+                    }
+                }
+                
+                if rowIndex < rows.count - 1 {
+                    Rectangle()
+                        .fill(Color(white: 0.9))
+                        .frame(height: 1)
+                }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color(white: 0.85), lineWidth: 1)
+        )
+    }
+}
+
 // MARK: - Chat Bubble
 
 struct ChatBubble: View {
@@ -2507,18 +3184,24 @@ struct ChatBubble: View {
                     .foregroundStyle(Color(white: 0.45))
                 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(message.content)
-                        .font(.system(size: 13))
-                        .foregroundStyle(message.isUser ? .white : Color(white: 0.1))
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            message.isUser 
-                                ? AnyShapeStyle(Color(red: 0.2, green: 0.5, blue: 0.95))
-                                : AnyShapeStyle(Color(white: 0.88)),
-                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        )
+                    Group {
+                        if message.isUser {
+                            Text(message.content)
+                                .font(.system(size: 13))
+                                .foregroundStyle(.white)
+                        } else {
+                            MarkdownText(content: message.content)
+                        }
+                    }
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        message.isUser 
+                            ? AnyShapeStyle(Color(red: 0.2, green: 0.5, blue: 0.95))
+                            : AnyShapeStyle(Color(white: 0.88)),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    )
                     
                     // Source documents widget for AI messages
                     if !message.isUser && !message.sources.isEmpty {
@@ -2693,10 +3376,8 @@ struct StreamingChatBubble: View {
                         .blur(radius: isTyping ? 0 : 8)
                         .scaleEffect(isTyping ? 1 : 0.85)
                     
-                    // Text content - fades in when content arrives
-                    Text(content)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color(white: 0.1))
+                    // Text content with markdown - fades in when content arrives
+                    MarkdownText(content: content)
                         .textSelection(.enabled)
                         .opacity(isTyping ? 0 : 1)
                         .blur(radius: isTyping ? 8 : 0)
