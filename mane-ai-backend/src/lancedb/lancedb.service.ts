@@ -246,6 +246,43 @@ export class LanceDBService implements OnModuleInit {
   }
 
   /**
+   * Generate embeddings for multiple texts in batch (much faster than sequential)
+   * The HuggingFace pipeline supports batch processing natively
+   */
+  async generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
+    if (!this.embedder) {
+      throw new Error('Embedding model not initialized');
+    }
+
+    if (texts.length === 0) return [];
+    if (texts.length === 1) return [await this.generateEmbedding(texts[0])];
+
+    // Process in optimal batch sizes (balance memory vs speed)
+    const BATCH_SIZE = 32;
+    const allEmbeddings: number[][] = [];
+
+    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+      const batch = texts.slice(i, i + BATCH_SIZE);
+      const outputs = await this.embedder(batch, {
+        pooling: 'mean',
+        normalize: true,
+      });
+
+      // Handle batch output - outputs.data contains all embeddings concatenated
+      const embeddingSize = this.TEXT_DIMENSION;
+      for (let j = 0; j < batch.length; j++) {
+        const start = j * embeddingSize;
+        const embedding = Array.from(
+          outputs.data.slice(start, start + embeddingSize),
+        );
+        allEmbeddings.push(embedding as number[]);
+      }
+    }
+
+    return allEmbeddings;
+  }
+
+  /**
    * Add a text document (also used for audio transcripts)
    */
   async addTextDocument(
@@ -306,6 +343,68 @@ export class LanceDBService implements OnModuleInit {
     metadata: Record<string, unknown> = {},
   ): Promise<string> {
     return this.addTextDocument(content, filePath, metadata);
+  }
+
+  /**
+   * Add multiple text documents in batch with batch embedding generation
+   * This is significantly faster than adding documents one by one
+   */
+  async addTextDocumentsBatch(
+    documents: Array<{
+      content: string;
+      filePath: string;
+      metadata?: Record<string, unknown>;
+    }>,
+  ): Promise<string[]> {
+    if (!this.textTable) {
+      throw new Error('Text table not initialized');
+    }
+
+    if (documents.length === 0) return [];
+
+    this.logger.log(`Batch adding ${documents.length} documents...`);
+    const startTime = Date.now();
+
+    // Extract all content for batch embedding
+    const contents = documents.map((d) => d.content);
+
+    // Generate all embeddings in batch (much faster)
+    const vectors = await this.generateEmbeddingsBatch(contents);
+
+    // Build all records
+    const records: TextDocumentRecord[] = [];
+    const ids: string[] = [];
+
+    for (let i = 0; i < documents.length; i++) {
+      const doc = documents[i];
+      const id = this.generateId();
+      const fileName = path.basename(doc.filePath);
+      const metadata = doc.metadata || {};
+      const mediaType = (metadata.mediaType as string) || 'text';
+      const { mediaType: _, ...cleanMetadata } = metadata;
+
+      records.push({
+        id,
+        content: doc.content,
+        filePath: doc.filePath,
+        fileName,
+        mediaType,
+        metadata: JSON.stringify(cleanMetadata),
+        vector: vectors[i],
+        createdAt: new Date().toISOString(),
+      });
+      ids.push(id);
+    }
+
+    // Insert all records in a single batch
+    await this.textTable.add(records);
+
+    const elapsed = Date.now() - startTime;
+    this.logger.log(
+      `Batch added ${documents.length} documents in ${elapsed}ms (${(elapsed / documents.length).toFixed(1)}ms/doc)`,
+    );
+
+    return ids;
   }
 
   /**
@@ -801,7 +900,8 @@ export class LanceDBService implements OnModuleInit {
   }
 
   /**
-   * Add multiple code skeletons in batch
+   * Add multiple code skeletons in batch with batch embedding generation
+   * Optimized for high throughput - generates all embeddings in parallel
    */
   async addCodeSkeletonsBatch(
     skeletons: Array<{
@@ -815,13 +915,23 @@ export class LanceDBService implements OnModuleInit {
       return [];
     }
 
+    this.logger.log(`Batch adding ${skeletons.length} code skeletons...`);
+    const startTime = Date.now();
+
+    // Extract all content for batch embedding
+    const contents = skeletons.map((s) => s.content);
+
+    // Generate all embeddings in batch (much faster than sequential)
+    const vectors = await this.generateEmbeddingsBatch(contents);
+
+    // Build all records
     const records: CodeSkeletonRecord[] = [];
     const ids: string[] = [];
 
-    for (const skeleton of skeletons) {
+    for (let i = 0; i < skeletons.length; i++) {
+      const skeleton = skeletons[i];
       const id = this.generateSkeletonId();
       const fileName = path.basename(skeleton.filePath);
-      const vector = await this.generateEmbedding(skeleton.content);
 
       records.push({
         id,
@@ -830,14 +940,19 @@ export class LanceDBService implements OnModuleInit {
         fileName,
         content: skeleton.content,
         language: skeleton.language,
-        vector,
+        vector: vectors[i],
         createdAt: new Date().toISOString(),
       });
       ids.push(id);
     }
 
+    // Insert all records in a single batch
     await this.skeletonsTable.add(records);
-    this.logger.log(`Added ${records.length} code skeletons in batch`);
+
+    const elapsed = Date.now() - startTime;
+    this.logger.log(
+      `Batch added ${skeletons.length} code skeletons in ${elapsed}ms (${(elapsed / skeletons.length).toFixed(1)}ms/skeleton)`,
+    );
 
     return ids;
   }

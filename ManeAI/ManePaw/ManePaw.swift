@@ -731,6 +731,7 @@ struct RaycastPanelContent: View {
                         .font(.system(size: 17, weight: .regular))
                         .textFieldStyle(.plain)
                         .foregroundStyle(Color(white: 0.0))
+                        .tint(Color(red: 0.95, green: 0.75, blue: 0.80))
                         .focused($focused)
                         .onSubmit { submit() }
                     } else {
@@ -738,6 +739,7 @@ struct RaycastPanelContent: View {
                             .font(.system(size: 17, weight: .regular))
                             .textFieldStyle(.plain)
                             .foregroundStyle(Color(white: 0.0))
+                            .tint(Color(red: 0.95, green: 0.75, blue: 0.80))
                             .focused($focused)
                             .onSubmit { submit() }
                     }
@@ -842,16 +844,27 @@ struct RaycastPanelContent: View {
     }
     
     private var searchingView: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-                .scaleEffect(1.2)
-                .tint(Color(red: 0.35, green: 0.45, blue: 0.95))
-            
-            Text("Searching your knowledge base...")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color(white: 0.4))
+        LoadingResultsView(
+            message: "Searching your knowledge base",
+            accentColor: searchModeColor
+        )
+        .frame(height: 300)
+    }
+    
+    /// Returns the accent color based on current search mode
+    private var searchModeColor: Color {
+        switch searchMode {
+        case .search:
+            return ManeTheme.Colors.accentPrimary
+        case .documents:
+            return ManeTheme.Colors.categoryDocument
+        case .projects:
+            return ManeTheme.Colors.categoryProject
+        case .chat:
+            return ManeTheme.Colors.categoryChat
+        case .tools:
+            return ManeTheme.Colors.accentTertiary
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     private var quickActionsView: some View {

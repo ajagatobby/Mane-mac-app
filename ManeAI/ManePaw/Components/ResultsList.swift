@@ -332,21 +332,290 @@ struct EmptyResultsView: View {
 
 // MARK: - Loading Results View
 
-/// View shown while loading results
+/// Beautiful animated view shown while loading results
 struct LoadingResultsView: View {
-    var message: String = "Searching..."
+    var message: String = "Searching your knowledge base"
+    var accentColor: Color = ManeTheme.Colors.accentPrimary
+    
+    @State private var isAnimating = false
+    @State private var pulseScale: CGFloat = 1.0
+    @State private var rotationAngle: Double = 0
+    @State private var dotOpacities: [Double] = [0.3, 0.3, 0.3]
     
     var body: some View {
-        VStack(spacing: ManeTheme.Spacing.md) {
-            ProgressView()
-                .scaleEffect(0.8)
+        VStack(spacing: ManeTheme.Spacing.xl) {
+            // Animated search indicator
+            searchIndicator
             
-            Text(message)
-                .font(ManeTheme.Typography.caption)
-                .foregroundStyle(ManeTheme.Colors.textSecondary)
+            // Animated message with dots
+            animatedMessage
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+        .onAppear {
+            startAnimations()
+        }
+    }
+    
+    // MARK: - Search Indicator
+    
+    private var searchIndicator: some View {
+        ZStack {
+            // Outer pulsing rings
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .stroke(
+                        accentColor.opacity(0.15 - Double(index) * 0.04),
+                        lineWidth: 2
+                    )
+                    .frame(width: 80 + CGFloat(index) * 24, height: 80 + CGFloat(index) * 24)
+                    .scaleEffect(isAnimating ? 1.0 + CGFloat(index) * 0.05 : 0.95)
+                    .opacity(isAnimating ? 0.8 - Double(index) * 0.2 : 0.4)
+                    .animation(
+                        .easeInOut(duration: 1.5)
+                        .repeatForever(autoreverses: true)
+                        .delay(Double(index) * 0.2),
+                        value: isAnimating
+                    )
+            }
+            
+            // Scanning arc
+            Circle()
+                .trim(from: 0, to: 0.3)
+                .stroke(
+                    AngularGradient(
+                        colors: [
+                            accentColor.opacity(0),
+                            accentColor.opacity(0.6),
+                            accentColor
+                        ],
+                        center: .center,
+                        startAngle: .degrees(0),
+                        endAngle: .degrees(120)
+                    ),
+                    style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                )
+                .frame(width: 70, height: 70)
+                .rotationEffect(.degrees(rotationAngle))
+            
+            // Center icon container
+            ZStack {
+                // Glow background
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                accentColor.opacity(0.2),
+                                accentColor.opacity(0.05),
+                                Color.clear
+                            ],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 35
+                        )
+                    )
+                    .frame(width: 70, height: 70)
+                    .scaleEffect(pulseScale)
+                
+                // Glass effect circle
+                Circle()
+                    .fill(ManeTheme.Colors.glassBackground)
+                    .frame(width: 52, height: 52)
+                    .overlay {
+                        Circle()
+                            .stroke(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.6),
+                                        Color.white.opacity(0.2)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    }
+                    .shadow(color: ManeTheme.Colors.shadowLight, radius: 8, x: 0, y: 4)
+                
+                // Magnifying glass icon
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [accentColor, accentColor.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .scaleEffect(isAnimating ? 1.0 : 0.9)
+                    .animation(
+                        .spring(response: 0.6, dampingFraction: 0.5)
+                        .repeatForever(autoreverses: true),
+                        value: isAnimating
+                    )
+            }
+            
+            // Floating document icons
+            floatingDocuments
+        }
+        .frame(height: 140)
+    }
+    
+    // MARK: - Floating Documents
+    
+    private var floatingDocuments: some View {
+        ZStack {
+            ForEach(Array(floatingIcons.enumerated()), id: \.offset) { index, iconData in
+                FloatingDocumentIcon(
+                    icon: iconData.icon,
+                    color: iconData.color,
+                    size: iconData.size,
+                    offset: iconData.offset,
+                    delay: Double(index) * 0.15,
+                    isAnimating: isAnimating
+                )
+            }
+        }
+    }
+    
+    private var floatingIcons: [(icon: String, color: Color, size: CGFloat, offset: CGSize)] {
+        [
+            ("doc.text.fill", ManeTheme.Colors.categoryDocument, 14, CGSize(width: -55, height: -35)),
+            ("folder.fill", ManeTheme.Colors.categoryProject, 13, CGSize(width: 58, height: -25)),
+            ("doc.fill", ManeTheme.Colors.accentTertiary, 12, CGSize(width: -50, height: 40)),
+            ("doc.richtext.fill", ManeTheme.Colors.accentSecondary, 13, CGSize(width: 52, height: 38)),
+        ]
+    }
+    
+    // MARK: - Animated Message
+    
+    private var animatedMessage: some View {
+        HStack(spacing: 0) {
+            Text(message)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(ManeTheme.Colors.textSecondary)
+            
+            // Animated dots
+            HStack(spacing: 2) {
+                ForEach(0..<3, id: \.self) { index in
+                    Circle()
+                        .fill(ManeTheme.Colors.textSecondary)
+                        .frame(width: 4, height: 4)
+                        .opacity(dotOpacities[index])
+                }
+            }
+            .padding(.leading, 2)
+        }
+    }
+    
+    // MARK: - Animations
+    
+    private func startAnimations() {
+        // Main animation flag
+        withAnimation {
+            isAnimating = true
+        }
+        
+        // Pulse animation
+        withAnimation(
+            .easeInOut(duration: 1.2)
+            .repeatForever(autoreverses: true)
+        ) {
+            pulseScale = 1.15
+        }
+        
+        // Rotation animation
+        withAnimation(
+            .linear(duration: 2.0)
+            .repeatForever(autoreverses: false)
+        ) {
+            rotationAngle = 360
+        }
+        
+        // Dot animation
+        animateDots()
+    }
+    
+    private func animateDots() {
+        // Cycle through dots with staggered timing
+        func animateDot(_ index: Int) {
+            withAnimation(.easeInOut(duration: 0.4)) {
+                dotOpacities[index] = 1.0
+            }
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    dotOpacities[index] = 0.3
+                }
+            }
+        }
+        
+        // Recursive animation loop
+        func loop() {
+            for i in 0..<3 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.2) {
+                    animateDot(i)
+                }
+            }
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                loop()
+            }
+        }
+        
+        loop()
+    }
+}
+
+// MARK: - Floating Document Icon
+
+private struct FloatingDocumentIcon: View {
+    let icon: String
+    let color: Color
+    let size: CGFloat
+    let offset: CGSize
+    let delay: Double
+    let isAnimating: Bool
+    
+    @State private var floatOffset: CGFloat = 0
+    @State private var opacity: Double = 0
+    
+    var body: some View {
+        ZStack {
+            // Soft glow
+            Circle()
+                .fill(color.opacity(0.15))
+                .frame(width: size + 12, height: size + 12)
+                .blur(radius: 4)
+            
+            // Icon background
+            Circle()
+                .fill(Color.white.opacity(0.9))
+                .frame(width: size + 8, height: size + 8)
+                .shadow(color: color.opacity(0.2), radius: 4, x: 0, y: 2)
+            
+            // Icon
+            Image(systemName: icon)
+                .font(.system(size: size, weight: .medium))
+                .foregroundStyle(color)
+        }
+        .offset(x: offset.width, y: offset.height + floatOffset)
+        .opacity(opacity)
+        .onAppear {
+            // Fade in
+            withAnimation(.easeOut(duration: 0.4).delay(delay)) {
+                opacity = 1.0
+            }
+            
+            // Float animation
+            withAnimation(
+                .easeInOut(duration: 1.8 + delay * 0.5)
+                .repeatForever(autoreverses: true)
+                .delay(delay)
+            ) {
+                floatOffset = -8
+            }
+        }
     }
 }
 
@@ -447,5 +716,29 @@ extension Array {
             .frame(height: 200)
     }
     .frame(width: 400)
+    .background(ManeTheme.Colors.background)
+}
+
+#Preview("Loading Results - Default") {
+    LoadingResultsView()
+        .frame(width: 500, height: 350)
+        .background(ManeTheme.Colors.background)
+}
+
+#Preview("Loading Results - Documents") {
+    LoadingResultsView(
+        message: "Searching documents",
+        accentColor: ManeTheme.Colors.categoryDocument
+    )
+    .frame(width: 500, height: 350)
+    .background(ManeTheme.Colors.background)
+}
+
+#Preview("Loading Results - Projects") {
+    LoadingResultsView(
+        message: "Searching projects",
+        accentColor: ManeTheme.Colors.categoryProject
+    )
+    .frame(width: 500, height: 350)
     .background(ManeTheme.Colors.background)
 }

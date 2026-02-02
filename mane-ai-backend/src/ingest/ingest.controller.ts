@@ -36,6 +36,26 @@ export class IngestController {
     return this.ingestService.ingestDocument(dto);
   }
 
+  @Post('batch')
+  @HttpCode(HttpStatus.CREATED)
+  async batchIngest(
+    @Body()
+    body: {
+      files: IngestDocumentDto[];
+      concurrency?: number;
+    },
+  ): Promise<{
+    success: number;
+    failed: number;
+    results: IngestResponseDto[];
+    elapsedMs: number;
+  }> {
+    return this.ingestService.batchIngestConcurrent(
+      body.files,
+      body.concurrency,
+    );
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   async deleteDocument(
