@@ -766,8 +766,8 @@ struct RaycastPanelContent: View {
                                     .font(.system(size: 13))
                                     .foregroundStyle(Color(white: 0.45))
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 40)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .frame(height: 220)
                         }
                         
                         ForEach(chatMessages) { msg in
@@ -1352,6 +1352,8 @@ struct SearchResultRow: View {
 
 struct ChatBubble: View {
     let message: ChatMessage
+    @State private var isHovered = false
+    @State private var showCopied = false
     
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -1377,18 +1379,58 @@ struct ChatBubble: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Color(white: 0.45))
                 
-                Text(message.content)
-                    .font(.system(size: 13))
-                    .foregroundStyle(message.isUser ? .white : Color(white: 0.1))
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        message.isUser 
-                            ? AnyShapeStyle(Color(red: 0.2, green: 0.5, blue: 0.95))
-                            : AnyShapeStyle(Color(white: 0.88)),
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    )
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(message.content)
+                        .font(.system(size: 13))
+                        .foregroundStyle(message.isUser ? .white : Color(white: 0.1))
+                        .textSelection(.enabled)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            message.isUser 
+                                ? AnyShapeStyle(Color(red: 0.2, green: 0.5, blue: 0.95))
+                                : AnyShapeStyle(Color(white: 0.88)),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        )
+                    
+                    // Copy button for AI messages - positioned at bottom
+                    if !message.isUser {
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(message.content, forType: .string)
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                showCopied = true
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    showCopied = false
+                                }
+                            }
+                        } label: {
+                            ZStack {
+                                // Copy icon
+                                Image(systemName: "doc.on.doc")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundStyle(Color(white: 0.5))
+                                    .scaleEffect(showCopied ? 0 : 1)
+                                    .opacity(showCopied ? 0 : 1)
+                                
+                                // Checkmark icon
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Color(red: 0.3, green: 0.75, blue: 0.45))
+                                    .scaleEffect(showCopied ? 1 : 0)
+                                    .opacity(showCopied ? 1 : 0)
+                            }
+                            .frame(width: 22, height: 22)
+                            .background(Color(white: 0.92), in: RoundedRectangle(cornerRadius: 5))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .opacity(isHovered || showCopied ? 1 : 0)
+                        .animation(.easeOut(duration: 0.15), value: isHovered)
+                    }
+                }
             }
             .frame(maxWidth: 400, alignment: message.isUser ? .trailing : .leading)
             
@@ -1398,6 +1440,9 @@ struct ChatBubble: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: message.isUser ? .trailing : .leading)
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }
 

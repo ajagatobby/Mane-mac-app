@@ -185,51 +185,122 @@ struct AnimatedGradient: View {
 
 // MARK: - Loading Animation
 
-/// Animated loading dots
+/// Simple loading dots (legacy support)
 struct LoadingDots: View {
-    @State private var animating = false
-    let count: Int = 3
+    @State private var opacity: [Double] = [0.3, 0.3, 0.3]
     
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(0..<count, id: \.self) { index in
+            ForEach(0..<3, id: \.self) { index in
                 Circle()
-                    .fill(ManeTheme.Colors.accentPrimary)
-                    .frame(width: 6, height: 6)
-                    .scaleEffect(animating ? 1.0 : 0.5)
-                    .opacity(animating ? 1.0 : 0.3)
-                    .animation(
-                        .easeInOut(duration: 0.5)
-                            .repeatForever(autoreverses: true)
-                            .delay(Double(index) * 0.15),
-                        value: animating
-                    )
+                    .fill(Color(white: 0.5))
+                    .frame(width: 5, height: 5)
+                    .opacity(opacity[index])
             }
         }
         .onAppear {
-            animating = true
+            animateDots()
+        }
+    }
+    
+    private func animateDots() {
+        for i in 0..<3 {
+            withAnimation(.easeInOut(duration: 0.5).repeatForever().delay(Double(i) * 0.15)) {
+                opacity[i] = 1.0
+            }
         }
     }
 }
 
-/// Typing indicator animation
+/// Premium shimmer typing indicator
 struct TypingIndicator: View {
-    @State private var animating = false
+    var body: some View {
+        ShimmerTextIndicator()
+    }
+}
+
+/// Shimmer bar indicator - subtle horizontal glow sweep
+struct ShimmerTextIndicator: View {
+    @State private var shimmerOffset: CGFloat = -1
+    
+    private let baseColor = Color(white: 0.55)
+    private let shimmerColor = Color(white: 0.3)
     
     var body: some View {
-        HStack(spacing: ManeTheme.Spacing.sm) {
-            LoadingDots()
-            
-            Text("Typing...")
-                .font(ManeTheme.Typography.caption)
-                .foregroundStyle(ManeTheme.Colors.textTertiary)
-        }
-        .padding(.horizontal, ManeTheme.Spacing.md)
-        .padding(.vertical, ManeTheme.Spacing.sm)
-        .background {
-            Capsule()
-                .fill(ManeTheme.Colors.backgroundSecondary)
-        }
+        Text("thinking...")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(Color(white: 0.5))
+            .overlay {
+                GeometryReader { geo in
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: .white.opacity(0.6), location: 0.4),
+                            .init(color: .white.opacity(0.8), location: 0.5),
+                            .init(color: .white.opacity(0.6), location: 0.6),
+                            .init(color: .clear, location: 1)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: geo.size.width * 0.6)
+                    .offset(x: shimmerOffset * (geo.size.width * 1.4))
+                    .blendMode(.sourceAtop)
+                }
+            }
+            .mask {
+                Text("thinking...")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: false)) {
+                    shimmerOffset = 1
+                }
+            }
+    }
+}
+
+/// Shimmer bar indicator - clean animated bar
+struct ShimmerBarIndicator: View {
+    @State private var shimmerOffset: CGFloat = -1
+    
+    let width: CGFloat
+    let height: CGFloat
+    let cornerRadius: CGFloat
+    
+    init(width: CGFloat = 60, height: CGFloat = 8, cornerRadius: CGFloat = 4) {
+        self.width = width
+        self.height = height
+        self.cornerRadius = cornerRadius
+    }
+    
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(Color(white: 0.85))
+            .frame(width: width, height: height)
+            .overlay {
+                GeometryReader { geo in
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: .white.opacity(0.5), location: 0.4),
+                            .init(color: .white.opacity(0.7), location: 0.5),
+                            .init(color: .white.opacity(0.5), location: 0.6),
+                            .init(color: .clear, location: 1)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: geo.size.width * 0.5)
+                    .offset(x: shimmerOffset * (geo.size.width * 1.3))
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) {
+                    shimmerOffset = 1
+                }
+            }
     }
 }
 
