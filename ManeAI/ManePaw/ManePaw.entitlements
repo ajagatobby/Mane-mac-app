@@ -21,5 +21,17 @@
     <!-- Allow reading/writing to Downloads folder -->
     <key>com.apple.security.files.downloads.read-write</key>
     <true/>
+    
+    <!-- Allow network server for local sidecar communication -->
+    <key>com.apple.security.network.server</key>
+    <true/>
+    
+    <!-- Allow spawning child processes (for Node.js sidecar) -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    
+    <!-- Disable library validation to allow Node.js native modules -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
 </dict>
 </plist>

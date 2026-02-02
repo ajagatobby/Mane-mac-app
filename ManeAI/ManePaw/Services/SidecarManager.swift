@@ -37,17 +37,59 @@ class SidecarManager: ObservableObject {
     // MARK: - Paths
     
     private var nodePath: String {
-        // First check for bundled Node.js
+        // Check for bundled Node.js in Resources/node/
         if let bundledNode = Bundle.main.path(forResource: "node", ofType: nil, inDirectory: "node") {
+            log("Using bundled Node.js: \(bundledNode)")
             return bundledNode
         }
-        // Fall back to system Node.js
+        
+        // Check for bundled Node.js in Resources/ (alternative location)
+        if let resourcePath = Bundle.main.resourcePath {
+            let nodePaths = [
+                "\(resourcePath)/node/node",
+                "\(resourcePath)/node"
+            ]
+            for path in nodePaths {
+                if FileManager.default.fileExists(atPath: path) {
+                    log("Using bundled Node.js: \(path)")
+                    return path
+                }
+            }
+        }
+        
+        // Fall back to common system Node.js locations
+        let systemPaths = [
+            "/opt/homebrew/bin/node",  // Homebrew on Apple Silicon
+            "/usr/local/bin/node",      // Homebrew on Intel / manual install
+            "/usr/bin/node"             // System install
+        ]
+        
+        for path in systemPaths {
+            if FileManager.default.fileExists(atPath: path) {
+                log("Using system Node.js: \(path)")
+                return path
+            }
+        }
+        
+        // Last resort
         return "/usr/local/bin/node"
     }
     
     private var sidecarPath: String? {
-        // Look for sidecar in the app bundle
-        return Bundle.main.path(forResource: "main", ofType: "js", inDirectory: "sidecar/dist")
+        // Look for sidecar in the app bundle - Resources/sidecar/dist/main.js
+        if let path = Bundle.main.path(forResource: "main", ofType: "js", inDirectory: "sidecar/dist") {
+            return path
+        }
+        
+        // Alternative: check Resources directory directly
+        if let resourcePath = Bundle.main.resourcePath {
+            let sidecarMain = "\(resourcePath)/sidecar/dist/main.js"
+            if FileManager.default.fileExists(atPath: sidecarMain) {
+                return sidecarMain
+            }
+        }
+        
+        return nil
     }
     
     private var dbPath: String {
@@ -145,10 +187,17 @@ class SidecarManager: ObservableObject {
         environment["NODE_ENV"] = "production"
         
         // Set NODE_PATH for the sidecar's node_modules
-        if let sidecarDir = Bundle.main.resourcePath {
-            let nodeModulesPath = "\(sidecarDir)/sidecar/node_modules"
+        if let resourcePath = Bundle.main.resourcePath {
+            let nodeModulesPath = "\(resourcePath)/sidecar/node_modules"
             environment["NODE_PATH"] = nodeModulesPath
+            log("NODE_PATH set to: \(nodeModulesPath)")
         }
+        
+        // Set working directory to sidecar folder for proper module resolution
+        let sidecarURL = URL(fileURLWithPath: sidecarPath)
+        let sidecarDir = sidecarURL.deletingLastPathComponent().deletingLastPathComponent().path
+        task.currentDirectoryURL = URL(fileURLWithPath: sidecarDir)
+        log("Working directory set to: \(sidecarDir)")
         
         task.environment = environment
         
