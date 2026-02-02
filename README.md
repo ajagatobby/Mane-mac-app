@@ -391,7 +391,7 @@ I'm available for freelance and contract work! If you need help building:
 **Let's connect:**
 
 <p align="center">
-  <a href="https://twitter.com/ajagatobby"><img src="https://img.shields.io/badge/Twitter-@ajagatobby?style=flat-square&logo=twitter&logoColor=white" alt="Twitter"></a>
+  <a href="https://twitter.com/ajaga_abdbasit"><img src="https://img.shields.io/badge/Twitter-@ajaga_abdbasit?style=flat-square&logo=twitter&logoColor=white" alt="Twitter"></a>
   <a href="https://github.com/ajagatobby"><img src="https://img.shields.io/badge/GitHub-ajagatobby-181717?style=flat-square&logo=github" alt="GitHub"></a>
   <a href="mailto:ajagatobby@gmail.com"><img src="https://img.shields.io/badge/Email-Contact%20Me-red?style=flat-square&logo=gmail&logoColor=white" alt="Email"></a>
 </p>
