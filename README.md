@@ -372,6 +372,24 @@ MIT License — see [LICENSE](./LICENSE) for details.
 
 ---
 
+## Hire Me
+
+I'm available for freelance and contract work! If you need help building:
+
+- Native macOS/iOS apps with SwiftUI
+- AI-powered applications with RAG and LLMs
+- Full-stack web applications
+
+**Let's connect:**
+
+<p align="center">
+  <a href="https://twitter.com/ajaaborisade"><img src="https://img.shields.io/badge/Twitter-@ajaaborisade-1DA1F2?style=flat-square&logo=twitter&logoColor=white" alt="Twitter"></a>
+  <a href="https://github.com/ajagatobby"><img src="https://img.shields.io/badge/GitHub-ajagatobby-181717?style=flat-square&logo=github" alt="GitHub"></a>
+  <a href="mailto:your-email@example.com"><img src="https://img.shields.io/badge/Email-Contact%20Me-red?style=flat-square&logo=gmail&logoColor=white" alt="Email"></a>
+</p>
+
+---
+
 <p align="center">
   <sub>Built with ❤️ using SwiftUI, NestJS, LanceDB, and Ollama</sub>
 </p>
