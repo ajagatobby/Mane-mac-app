@@ -18,8 +18,11 @@ import UniformTypeIdentifiers
 final class PanelManager: ObservableObject {
     static let shared = PanelManager()
     
-    /// The overlay panel - uses OverlayPanel subclass for proper focus management
+    /// The main overlay panel - uses OverlayPanel subclass for proper focus management
     private(set) var panel: OverlayPanel?
+    
+    /// The onboarding overlay panel - shown on first launch
+    private(set) var onboardingPanel: OverlayPanel?
     
     /// Backend process manager
     let sidecarManager: SidecarManager
@@ -36,8 +39,17 @@ final class PanelManager: ObservableObject {
     private var localMonitor: Any?
     
     @Published var isPanelVisible = false
+    @Published var isOnboardingVisible = false
+    @Published var hasCompletedOnboarding: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedOnboarding, forKey: "hasCompletedOnboarding")
+        }
+    }
     
     private init() {
+        // Load onboarding state
+        self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+        
         // Initialize sidecar manager first
         let sidecar = SidecarManager()
         self.sidecarManager = sidecar
@@ -47,10 +59,18 @@ final class PanelManager: ObservableObject {
         
         setupModelContainer()
         setupPanel()
+        setupOnboardingPanel()
         setupHotkey()
         
         Task {
             await sidecar.start()
+        }
+        
+        // Show onboarding on first launch
+        if !hasCompletedOnboarding {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.showOnboarding()
+            }
         }
     }
     
@@ -97,6 +117,67 @@ final class PanelManager: ObservableObject {
         
         panel.contentView = NSHostingView(rootView: contentView)
         self.panel = panel
+    }
+    
+    // MARK: - Onboarding Panel Setup
+    
+    private func setupOnboardingPanel() {
+        // Create the onboarding OverlayPanel - matches the onboarding view size
+        let panel = OverlayPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 480),
+            backing: .buffered,
+            defer: false
+        )
+        
+        // Prevent auto-dismiss on click outside for onboarding
+        panel.preventDismiss = true
+        
+        // Set up dismissal callback
+        panel.onDismiss = { [weak self] in
+            self?.isOnboardingVisible = false
+        }
+        
+        // Create SwiftUI onboarding content
+        let contentView = OnboardingPanelContent(
+            onComplete: { [weak self] in
+                self?.completeOnboarding()
+            }
+        )
+        
+        panel.contentView = NSHostingView(rootView: contentView)
+        self.onboardingPanel = panel
+    }
+    
+    // MARK: - Onboarding Control
+    
+    func showOnboarding() {
+        guard let panel = onboardingPanel else {
+            print("❌ Onboarding panel is nil")
+            return
+        }
+        
+        NSApp.activate(ignoringOtherApps: true)
+        panel.present()
+        isOnboardingVisible = true
+        print("✅ Onboarding shown")
+    }
+    
+    func hideOnboarding() {
+        guard let panel = onboardingPanel else { return }
+        
+        panel.dismiss { [weak self] in
+            self?.isOnboardingVisible = false
+        }
+    }
+    
+    func completeOnboarding() {
+        hasCompletedOnboarding = true
+        hideOnboarding()
+        
+        // Show the main panel after a brief delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.showPanel()
+        }
     }
     
     // MARK: - Hotkey
@@ -155,6 +236,17 @@ final class PanelManager: ObservableObject {
     }
     
     func togglePanel() {
+        // If onboarding not complete, show onboarding instead
+        if !hasCompletedOnboarding {
+            if isOnboardingVisible {
+                // Don't allow dismissing onboarding via hotkey
+                return
+            } else {
+                showOnboarding()
+            }
+            return
+        }
+        
         if isPanelVisible {
             hidePanel()
         } else {
@@ -163,6 +255,12 @@ final class PanelManager: ObservableObject {
     }
     
     func showPanel() {
+        // Don't show main panel if onboarding not complete
+        guard hasCompletedOnboarding else {
+            showOnboarding()
+            return
+        }
+        
         guard let panel = panel else {
             print("❌ Panel is nil - cannot show")
             return
@@ -201,12 +299,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Force PanelManager initialization on app launch
         // This ensures the global hotkey is registered immediately
+        // PanelManager also handles showing onboarding on first launch
         _ = PanelManager.shared
         print("✅ Mane-paw launched - Press Ctrl+W to toggle overlay")
     }
     
     func applicationWillTerminate(_ notification: Notification) {
         // Cleanup handled by PanelManager.deinit
+    }
+}
+
+// MARK: - Onboarding Window Content
+
+/// Wrapper view for the onboarding window that handles window management
+// MARK: - Onboarding Panel Content
+
+/// Content view for the onboarding overlay panel
+struct OnboardingPanelContent: View {
+    var onComplete: () -> Void
+    @State private var hasCompleted = false
+    
+    var body: some View {
+        OnboardingView(hasCompletedOnboarding: $hasCompleted)
+            .onChange(of: hasCompleted) { _, newValue in
+                if newValue {
+                    onComplete()
+                }
+            }
     }
 }
 
@@ -262,6 +381,12 @@ struct MenuBarView: View {
                 panelManager.showPanel()
             }
             .keyboardShortcut("w", modifiers: .control)
+            
+            Button("Show Welcome Tour") {
+                // Reset onboarding and show it
+                panelManager.hasCompletedOnboarding = false
+                panelManager.showOnboarding()
+            }
             
             Divider()
             
