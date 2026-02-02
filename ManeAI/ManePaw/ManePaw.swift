@@ -302,12 +302,7 @@ struct RaycastPanelContent: View {
     
     // Dynamic height based on current state
     private var panelHeight: CGFloat {
-        if showChat && results.isEmpty {
-            let baseHeight: CGFloat = 340
-            let messageHeight = min(CGFloat(chatMessages.count) * 50, 160)
-            return baseHeight + messageHeight
-        }
-        return 420
+        showChat ? 450 : 420
     }
     
     var body: some View {
@@ -331,8 +326,7 @@ struct RaycastPanelContent: View {
             actionBarView
         }
         .frame(width: 750, height: panelHeight)
-        .animation(.spring(response: 0.35, dampingFraction: 1.0), value: showChat)
-        .animation(.spring(response: 0.25, dampingFraction: 1.0), value: chatMessages.count)
+        .animation(.spring(response: 0.4, dampingFraction: 0.9), value: showChat)
         .background {
             // Raycast-style clean background - more opaque for better contrast
             ZStack {
