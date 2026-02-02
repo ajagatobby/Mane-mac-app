@@ -317,6 +317,7 @@ struct RaycastPanelContent: View {
     
     // Quick actions data - vibrant colors like Raycast
     private let quickActions: [(title: String, subtitle: String, icon: String, color: Color, id: String)] = [
+        ("Search All", "Search your knowledge base", "magnifyingglass", Color(red: 0.35, green: 0.45, blue: 0.95), "searchall"),
         ("AI Chat", "Mane-paw AI", "sparkles", Color(red: 0.95, green: 0.3, blue: 0.35), "chat"),
         ("Index Files", "Add files or folders", "plus.square.on.square", Color(red: 0.35, green: 0.65, blue: 0.95), "index"),
         ("Documents", "Search files", "doc.fill", Color(red: 1.0, green: 0.78, blue: 0.28), "search"),
@@ -852,7 +853,7 @@ struct RaycastPanelContent: View {
                     }
                 }
                 
-                // Commands section
+                // Tools section
                 Text("Tools")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color(white: 0.4))
@@ -1676,6 +1677,8 @@ struct RaycastPanelContent: View {
     private func handleQuickAction(_ id: String) {
         withAnimation(.easeInOut(duration: 0.25)) {
             switch id {
+            case "searchall":
+                searchMode = .search
             case "chat":
                 searchMode = .chat
                 showChat = true

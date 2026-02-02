@@ -2,6 +2,9 @@
 node_modules/
 .pnpm-store/
 
+.cursor/
+.vscode/
+
 maneai-web/
 
 # Build outputs
