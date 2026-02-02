@@ -1,6 +1,14 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ffmpeg = require('fluent-ffmpeg');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+
+// Set ffmpeg path
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 // Types for pipelines
 type Pipeline = any;
@@ -169,18 +177,117 @@ export class MultimodalService implements OnModuleInit {
   }
 
   /**
+   * Convert audio file to 16kHz mono WAV format for Whisper
+   */
+  private async convertToWav(inputPath: string): Promise<string> {
+    const tempDir = os.tmpdir();
+    const outputPath = path.join(tempDir, `whisper_${Date.now()}.wav`);
+
+    return new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .audioFrequency(16000) // 16kHz sample rate (Whisper requirement)
+        .audioChannels(1) // Mono
+        .audioCodec('pcm_s16le') // 16-bit PCM
+        .format('wav')
+        .on('error', (err) => {
+          reject(new Error(`FFmpeg conversion failed: ${err.message}`));
+        })
+        .on('end', () => {
+          resolve(outputPath);
+        })
+        .save(outputPath);
+    });
+  }
+
+  /**
+   * Read WAV file and extract raw PCM audio as Float32Array
+   */
+  private async readWavAsFloat32(wavPath: string): Promise<Float32Array> {
+    const buffer = await fs.promises.readFile(wavPath);
+
+    // Parse WAV header (44 bytes for standard PCM WAV)
+    // Skip to data chunk
+    let dataOffset = 12; // Skip RIFF header
+    while (dataOffset < buffer.length - 8) {
+      const chunkId = buffer.toString('ascii', dataOffset, dataOffset + 4);
+      const chunkSize = buffer.readUInt32LE(dataOffset + 4);
+
+      if (chunkId === 'data') {
+        dataOffset += 8; // Skip chunk header
+        break;
+      }
+      dataOffset += 8 + chunkSize;
+    }
+
+    // Extract PCM data (16-bit signed integers)
+    const pcmData = buffer.subarray(dataOffset);
+    const samples = new Float32Array(pcmData.length / 2);
+
+    for (let i = 0; i < samples.length; i++) {
+      // Convert 16-bit signed integer to float [-1, 1]
+      const int16 = pcmData.readInt16LE(i * 2);
+      samples[i] = int16 / 32768.0;
+    }
+
+    return samples;
+  }
+
+  /**
    * Transcribe audio using Whisper
+   * Converts audio to 16kHz mono WAV and passes raw PCM to pipeline
+   * @throws Error if transcription fails - no silent fallback
    */
   async transcribeAudio(audioPath: string): Promise<string> {
     const pipe = await this.getWhisperPipeline();
+    const fileName = path.basename(audioPath);
+    let tempWavPath: string | null = null;
 
     try {
-      const result = (await pipe(audioPath)) as TranscriptionResult;
-      return result.text || '';
+      this.logger.log(`Transcribing audio: ${fileName}`);
+
+      // Convert to 16kHz mono WAV
+      this.logger.log(`Converting ${fileName} to 16kHz WAV...`);
+      tempWavPath = await this.convertToWav(audioPath);
+
+      // Read WAV as Float32Array
+      this.logger.log(`Reading PCM data from WAV...`);
+      const audioData = await this.readWavAsFloat32(tempWavPath);
+      const durationSec = (audioData.length / 16000).toFixed(1);
+      this.logger.log(
+        `Audio loaded: ${audioData.length} samples (${durationSec}s)`,
+      );
+
+      // Pass raw audio data to Whisper (not file path)
+      const result = (await pipe(audioData, {
+        sampling_rate: 16000,
+      })) as TranscriptionResult;
+
+      const transcript = result.text?.trim() || '';
+
+      if (!transcript) {
+        throw new Error('Whisper returned empty transcript');
+      }
+
+      this.logger.log(
+        `Successfully transcribed ${fileName}: ${transcript.length} chars`,
+      );
+      return transcript;
     } catch (error: any) {
-      this.logger.warn(`Whisper transcription failed: ${error.message}`);
-      // Return filename as fallback
-      return `Audio file: ${path.basename(audioPath)}`;
+      this.logger.error(
+        `Whisper transcription failed for ${fileName}: ${error.message}`,
+      );
+      throw new Error(
+        `Failed to transcribe audio "${fileName}": ${error.message}. The audio file may be corrupted, too long, or in an unsupported format.`,
+      );
+    } finally {
+      // Clean up temp WAV file
+      if (tempWavPath) {
+        try {
+          await fs.promises.unlink(tempWavPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
     }
   }
 

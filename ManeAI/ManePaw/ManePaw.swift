@@ -485,7 +485,8 @@ struct RaycastPanelContent: View {
         guard let tool = activeToolPrefix else { return [] }
         switch tool.prefix {
         case "Summarize:":
-            return ["pdf", "txt", "md", "doc", "docx", "rtf"]
+            // Allow both documents and audio files (audio will be transcribed first, then summarized)
+            return ["pdf", "txt", "md", "doc", "docx", "rtf", "mp3", "wav", "m4a", "aac", "ogg", "flac"]
         case "Transcribe:":
             return ["mp3", "wav", "m4a", "aac", "ogg", "flac"]
         default:
@@ -498,7 +499,7 @@ struct RaycastPanelContent: View {
         guard let tool = activeToolPrefix else { return "" }
         switch tool.prefix {
         case "Summarize:":
-            return "Add a document"
+            return "Add a document or audio"
         case "Transcribe:":
             return "Add an audio file"
         default:
@@ -511,7 +512,7 @@ struct RaycastPanelContent: View {
         guard let tool = activeToolPrefix else { return "Ask anything about the document" }
         switch tool.prefix {
         case "Summarize:":
-            return "Ready to summarize! Ask for a summary or\nspecific aspects of the document."
+            return "Ready to summarize! Add a document or audio\nfile and ask for a summary."
         case "Transcribe:":
             return "Ready to transcribe! Press ↵ to start\nor ask about specific parts of the audio."
         case "Write:":
@@ -662,22 +663,23 @@ struct RaycastPanelContent: View {
         HStack(spacing: 12) {
             // Mode indicator button
             Button {
-                withAnimation(.easeOut(duration: 0.15)) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     cycleMode()
                 }
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: modeIcon)
                         .font(.system(size: 14, weight: .medium))
-                    if !showChat {
-                        Text(modeName)
-                            .font(.system(size: 12, weight: .medium))
-                    }
+                        .contentTransition(.symbolEffect(.replace))
+                    Text(modeName)
+                        .font(.system(size: 12, weight: .medium))
+                        .contentTransition(.interpolate)
                 }
                 .foregroundStyle(modeColor)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(modeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: searchMode)
             }
             .buttonStyle(.plain)
             .help("Switch mode (Tab)")
@@ -1383,7 +1385,7 @@ struct RaycastPanelContent: View {
                                                 
                                                 Text(activeToolPrefix?.prefix == "Transcribe:" 
                                                     ? "MP3, WAV, M4A, AAC supported"
-                                                    : "PDF, TXT, MD, DOC supported")
+                                                    : "PDF, TXT, MD, DOC, MP3, WAV supported")
                                                     .font(.system(size: 11))
                                                     .foregroundStyle(Color(white: 0.5))
                                             }
@@ -1494,10 +1496,17 @@ struct RaycastPanelContent: View {
             .dropDestination(for: URL.self) { items, _ in
                 guard let url = items.first else { return false }
                 
-                // Check if file type is supported
+                // Check if file type is supported for the current tool
                 let ext = url.pathExtension.lowercased()
-                let supportedExtensions = ["pdf", "txt", "md", "doc", "docx", "rtf", "mp3", "wav", "m4a", "aac", "ogg", "flac", "jpg", "jpeg", "png", "gif", "webp"]
-                guard supportedExtensions.contains(ext) else { return false }
+                
+                // If a tool is active, only allow that tool's file types
+                if toolRequiresFile {
+                    guard allowedFileTypes.contains(ext) else { return false }
+                } else {
+                    // General drop - accept all supported extensions
+                    let supportedExtensions = ["pdf", "txt", "md", "doc", "docx", "rtf", "mp3", "wav", "m4a", "aac", "ogg", "flac", "jpg", "jpeg", "png", "gif", "webp"]
+                    guard supportedExtensions.contains(ext) else { return false }
+                }
                 
                 // Attach the file
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
