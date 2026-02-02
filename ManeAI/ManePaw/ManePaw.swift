@@ -1531,7 +1531,7 @@ struct RaycastPanelContent: View {
                 .frame(height: 0)
                 .fileImporter(
                     isPresented: $showFilePicker,
-                    allowedContentTypes: allowedFileTypes.map { ext in
+                    allowedContentTypes: allowedFileTypes.compactMap { ext -> UTType? in
                         switch ext {
                         case "pdf": return .pdf
                         case "txt": return .plainText
@@ -1541,10 +1541,9 @@ struct RaycastPanelContent: View {
                         case "mp3": return .mp3
                         case "wav": return .wav
                         case "m4a": return .mpeg4Audio
-                        case "aac": return .data
-                        case "ogg": return .data
-                        case "flac": return .data
-                        default: return .data
+                        case "aac", "ogg", "flac":
+                            return UTType(filenameExtension: ext) ?? .audio
+                        default: return .audio
                         }
                     },
                     allowsMultipleSelection: false
