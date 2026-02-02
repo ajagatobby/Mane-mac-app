@@ -55,6 +55,7 @@ struct IngestResponse: Codable {
 struct ChatRequest: Codable {
     let query: String
     let stream: Bool?
+    let documentIds: [String]?  // Filter to specific documents only
 }
 
 struct ChatResponse: Codable {
@@ -297,12 +298,16 @@ class APIService: ObservableObject {
     
     // MARK: - Chat Endpoints
     
-    func chat(query: String) async throws -> ChatResponse {
-        let request = ChatRequest(query: query, stream: false)
+    func chat(query: String, documentIds: [String]? = nil) async throws -> ChatResponse {
+        let request = ChatRequest(query: query, stream: false, documentIds: documentIds)
         return try await post(path: "/chat", body: request)
     }
     
-    func chatStream(query: String) -> AsyncThrowingStream<String, Error> {
+    /// Stream chat response with optional document filtering
+    /// - Parameters:
+    ///   - query: The user's query
+    ///   - documentIds: Optional array of document IDs to restrict search to. When provided, only these documents will be searched.
+    func chatStream(query: String, documentIds: [String]? = nil) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -312,7 +317,7 @@ class APIService: ObservableObject {
                     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     
-                    let body = ChatRequest(query: query, stream: true)
+                    let body = ChatRequest(query: query, stream: true, documentIds: documentIds)
                     request.httpBody = try JSONEncoder().encode(body)
                     
                     let (bytes, response) = try await session.bytes(for: request)

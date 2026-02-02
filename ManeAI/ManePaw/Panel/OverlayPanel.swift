@@ -17,6 +17,9 @@ class OverlayPanel: NSPanel {
     /// Callback invoked when the panel is dismissed via resignKey
     var onDismiss: (() -> Void)?
     
+    /// When true, prevents auto-dismiss on resignKey (used during file picker)
+    var preventDismiss: Bool = false
+    
     init(contentRect: NSRect, backing: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(
             contentRect: contentRect,
@@ -85,6 +88,10 @@ class OverlayPanel: NSPanel {
     /// This is the "proper" Raycast behavior - panel disappears when you click outside
     override func resignKey() {
         super.resignKey()
+        
+        // Don't dismiss if preventDismiss is set (e.g., during file picker)
+        guard !preventDismiss else { return }
+        
         // Hide the panel instead of closing to preserve state
         self.orderOut(nil)
         // Notify manager of dismissal

@@ -9,6 +9,7 @@ import SwiftUI
 import SwiftData
 import AppKit
 import Combine
+import UniformTypeIdentifiers
 
 // MARK: - Global Panel Manager
 
@@ -25,6 +26,9 @@ final class PanelManager: ObservableObject {
     
     /// API service for backend communication - shares URL with sidecarManager
     let apiService: APIService
+    
+    /// Document indexing service for smart deduplication
+    var indexingService: DocumentIndexingService?
     
     var modelContainer: ModelContainer?
     
@@ -51,7 +55,7 @@ final class PanelManager: ObservableObject {
     }
     
     private func setupModelContainer() {
-        let schema = Schema([Document.self, Project.self, ChatMessage.self, ChatConversation.self])
+        let schema = Schema([Document.self, Project.self, ChatMessage.self, ChatConversation.self, IndexedFile.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false, allowsSave: true)
         modelContainer = try? ModelContainer(for: schema, configurations: [config])
     }
@@ -60,6 +64,13 @@ final class PanelManager: ObservableObject {
     
     private func setupPanel() {
         guard let container = modelContainer else { return }
+        
+        // Initialize the indexing service with model context
+        let indexService = DocumentIndexingService(
+            apiService: apiService,
+            modelContext: container.mainContext
+        )
+        self.indexingService = indexService
         
         // Create the OverlayPanel with production-quality settings
         // OverlayPanel handles: .mainMenu level, resignKey() auto-dismiss,
@@ -79,7 +90,8 @@ final class PanelManager: ObservableObject {
         let contentView = RaycastPanelContent(
             onDismiss: { [weak self] in self?.hidePanel() },
             sidecarManager: sidecarManager,
-            apiService: apiService
+            apiService: apiService,
+            indexingService: indexService
         )
         .modelContainer(container)
         
@@ -260,6 +272,7 @@ struct RaycastPanelContent: View {
     let onDismiss: () -> Void
     @ObservedObject var sidecarManager: SidecarManager
     @ObservedObject var apiService: APIService
+    @ObservedObject var indexingService: DocumentIndexingService
     
     @State private var searchQuery = ""
     @State private var searchMode: SearchMode = .search
@@ -271,6 +284,11 @@ struct RaycastPanelContent: View {
     @State private var searchTask: Task<Void, Never>?
     @State private var streamingContent = ""
     @State private var isStreaming = false
+    @State private var attachedFile: URL? = nil
+    @State private var attachedFileIndexed = false
+    @State private var attachedFileId: String? = nil
+    @State private var showFilePicker = false
+    @State private var indexingStatus: String? = nil
     @FocusState private var focused: Bool
     
     // Animation namespace for morphing effects
@@ -306,6 +324,53 @@ struct RaycastPanelContent: View {
             }
         }
         return nil
+    }
+    
+    // Check if current tool requires file attachment
+    private var toolRequiresFile: Bool {
+        guard let tool = activeToolPrefix else { return false }
+        return tool.prefix == "Summarize:" || tool.prefix == "Transcribe:"
+    }
+    
+    // Get allowed file types for current tool
+    private var allowedFileTypes: [String] {
+        guard let tool = activeToolPrefix else { return [] }
+        switch tool.prefix {
+        case "Summarize:":
+            return ["pdf", "txt", "md", "doc", "docx", "rtf"]
+        case "Transcribe:":
+            return ["mp3", "wav", "m4a", "aac", "ogg", "flac"]
+        default:
+            return []
+        }
+    }
+    
+    // File type description for UI
+    private var fileTypeDescription: String {
+        guard let tool = activeToolPrefix else { return "" }
+        switch tool.prefix {
+        case "Summarize:":
+            return "Add a document"
+        case "Transcribe:":
+            return "Add an audio file"
+        default:
+            return ""
+        }
+    }
+    
+    // Tool hint text for empty state
+    private var toolHintText: String {
+        guard let tool = activeToolPrefix else { return "Ask anything about the document" }
+        switch tool.prefix {
+        case "Summarize:":
+            return "Ready to summarize! Ask for a summary or\nspecific aspects of the document."
+        case "Transcribe:":
+            return "Ready to transcribe! Press ↵ to start\nor ask about specific parts of the audio."
+        case "Write:":
+            return "Ready to write! Describe what you'd like\nto create based on this document."
+        default:
+            return "Ask anything about the attached document."
+        }
     }
     
     // Query without the tool prefix
@@ -362,6 +427,9 @@ struct RaycastPanelContent: View {
                 // Solid light gray overlay for better readability
                 Color(red: 0.95, green: 0.95, blue: 0.96)
                     .opacity(0.97)
+                
+                // Noise texture overlay for subtle grain
+                StaticNoiseOverlay(intensity: 0.05)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -459,44 +527,26 @@ struct RaycastPanelContent: View {
             .help("Switch mode (Tab)")
             
             // Text field with tool prefix badge
-            HStack(spacing: 8) {
-                // Tool prefix badge (if active)
+            HStack(spacing: 6) {
+                // Tool prefix badge (if active) - compact version
                 if let tool = activeToolPrefix {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 3) {
                         Image(systemName: tool.icon)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 9, weight: .semibold))
                         Text(String(tool.prefix.dropLast()))
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                     }
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background {
-                        ZStack {
-                            // Gradient background
-                            LinearGradient(
-                                colors: tool.gradientColors,
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                            
-                            // Noise overlay - subtle grain texture
-                            Canvas { context, size in
-                                for _ in 0..<400 {
-                                    let x = CGFloat.random(in: 0..<size.width)
-                                    let y = CGFloat.random(in: 0..<size.height)
-                                    let dotSize = CGFloat.random(in: 1...1.5)
-                                    context.fill(
-                                        Path(ellipseIn: CGRect(x: x, y: y, width: dotSize, height: dotSize)),
-                                        with: .color(.white.opacity(Double.random(in: 0.1...0.22)))
-                                    )
-                                }
-                            }
-                            .blendMode(.overlay)
-                        }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .shadow(color: tool.gradientColors[0].opacity(0.3), radius: 4, y: 2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        LinearGradient(
+                            colors: tool.gradientColors,
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 }
                 
                 // Text field with custom placeholder
@@ -820,6 +870,10 @@ struct RaycastPanelContent: View {
                         results = []
                         streamingContent = ""
                         isStreaming = false
+                        attachedFile = nil
+                        attachedFileIndexed = false
+                        attachedFileId = nil
+                        indexingStatus = nil
                     }
                 } label: {
                     HStack(spacing: 4) {
@@ -855,16 +909,101 @@ struct RaycastPanelContent: View {
                     ScrollView(showsIndicators: false) {
                         LazyVStack(spacing: 12) {
                             if chatMessages.isEmpty && !isStreaming {
-                                VStack(spacing: 8) {
-                                    Image(systemName: "bubble.left.and.bubble.right")
-                                        .font(.system(size: 32, weight: .light))
-                                        .foregroundStyle(Color(white: 0.65))
-                                    Text("Ask anything about your documents")
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(Color(white: 0.45))
+                                // Empty state - different for tools vs regular chat
+                                if toolRequiresFile && attachedFile == nil {
+                                    // Tool mode - show file upload prompt
+                                    Button {
+                                        showFilePicker = true
+                                    } label: {
+                                        VStack(spacing: 12) {
+                                            // Icon with gradient background
+                                            ZStack {
+                                                Circle()
+                                                    .fill(
+                                                        LinearGradient(
+                                                            colors: activeToolPrefix?.gradientColors ?? [.gray],
+                                                            startPoint: .topLeading,
+                                                            endPoint: .bottomTrailing
+                                                        )
+                                                    )
+                                                    .frame(width: 56, height: 56)
+                                                
+                                                Image(systemName: activeToolPrefix?.prefix == "Transcribe:" ? "waveform" : "doc.badge.plus")
+                                                    .font(.system(size: 24, weight: .medium))
+                                                    .foregroundStyle(.white)
+                                            }
+                                            
+                                            VStack(spacing: 4) {
+                                                Text(fileTypeDescription)
+                                                    .font(.system(size: 14, weight: .semibold))
+                                                    .foregroundStyle(Color(white: 0.25))
+                                                
+                                                Text(activeToolPrefix?.prefix == "Transcribe:" 
+                                                    ? "MP3, WAV, M4A, AAC supported"
+                                                    : "PDF, TXT, MD, DOC supported")
+                                                    .font(.system(size: 11))
+                                                    .foregroundStyle(Color(white: 0.5))
+                                            }
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 30)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .strokeBorder(
+                                                    LinearGradient(
+                                                        colors: (activeToolPrefix?.gradientColors ?? [.gray]).map { $0.opacity(0.5) },
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    ),
+                                                    style: StrokeStyle(lineWidth: 2, dash: [8, 4])
+                                                )
+                                        )
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .fill(Color(white: 0.96))
+                                        )
+                                        .padding(.horizontal, 40)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    .frame(height: 220)
+                                } else if !toolRequiresFile || attachedFile != nil {
+                                    // Regular chat or file already attached
+                                    VStack(spacing: 8) {
+                                        if let tool = activeToolPrefix {
+                                            // Tool mode with file attached - show tool-specific hint
+                                            Image(systemName: tool.icon)
+                                                .font(.system(size: 32, weight: .light))
+                                                .foregroundStyle(tool.gradientColors.first ?? Color(white: 0.65))
+                                            
+                                            if attachedFileIndexed {
+                                                Text(toolHintText)
+                                                    .font(.system(size: 13))
+                                                    .foregroundStyle(Color(white: 0.45))
+                                                    .multilineTextAlignment(.center)
+                                            } else {
+                                                HStack(spacing: 6) {
+                                                    ProgressView()
+                                                        .scaleEffect(0.7)
+                                                    Text("Indexing document...")
+                                                        .font(.system(size: 13))
+                                                        .foregroundStyle(Color(white: 0.45))
+                                                }
+                                            }
+                                        } else {
+                                            Image(systemName: "bubble.left.and.bubble.right")
+                                                .font(.system(size: 32, weight: .light))
+                                                .foregroundStyle(Color(white: 0.65))
+                                            Text(attachedFile != nil 
+                                                ? "Ask questions about the attached document" 
+                                                : "Ask anything about your documents")
+                                                .font(.system(size: 13))
+                                                .foregroundStyle(Color(white: 0.45))
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    .frame(height: 220)
                                 }
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .frame(height: 220)
                             }
                             
                             ForEach(chatMessages) { msg in
@@ -909,13 +1048,108 @@ struct RaycastPanelContent: View {
                 .frame(height: 40)
                 .allowsHitTesting(false)
             }
+            .dropDestination(for: URL.self) { items, _ in
+                guard let url = items.first else { return false }
+                
+                // Check if file type is supported
+                let ext = url.pathExtension.lowercased()
+                let supportedExtensions = ["pdf", "txt", "md", "doc", "docx", "rtf", "mp3", "wav", "m4a", "aac", "ogg", "flac", "jpg", "jpeg", "png", "gif", "webp"]
+                guard supportedExtensions.contains(ext) else { return false }
+                
+                // Attach the file
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                    attachedFile = url
+                    attachedFileIndexed = false
+                    attachedFileId = nil
+                    indexingStatus = "Preparing..."
+                }
+                
+                // Index the file
+                Task {
+                    await indexAttachedFile(url, didStartAccess: false)
+                }
+                
+                return true
+            }
+            
+            // Attached file display moved to footer (actionBarView)
+            
+            // File importer (attached to the view)
+            Color.clear
+                .frame(height: 0)
+                .fileImporter(
+                    isPresented: $showFilePicker,
+                    allowedContentTypes: allowedFileTypes.map { ext in
+                        switch ext {
+                        case "pdf": return .pdf
+                        case "txt": return .plainText
+                        case "md": return .plainText
+                        case "doc", "docx": return .data
+                        case "rtf": return .rtf
+                        case "mp3": return .mp3
+                        case "wav": return .wav
+                        case "m4a": return .mpeg4Audio
+                        case "aac": return .data
+                        case "ogg": return .data
+                        case "flac": return .data
+                        default: return .data
+                        }
+                    },
+                    allowsMultipleSelection: false
+                ) { result in
+                    switch result {
+                    case .success(let urls):
+                        if let url = urls.first {
+                            // Start security-scoped access for sandboxed apps
+                            let didStartAccess = url.startAccessingSecurityScopedResource()
+                            
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                                attachedFile = url
+                                attachedFileIndexed = false
+                                attachedFileId = nil
+                                indexingStatus = "Preparing..."
+                            }
+                            
+                            // Index the file automatically
+                            Task {
+                                await indexAttachedFile(url, didStartAccess: didStartAccess)
+                            }
+                        }
+                    case .failure:
+                        break
+                    }
+                }
+                .onChange(of: showFilePicker) { _, isShowing in
+                    // Prevent panel from dismissing while file picker is open
+                    if let panel = PanelManager.shared.panel {
+                        panel.preventDismiss = isShowing
+                    }
+                }
             
             // Input hint
             HStack {
                 Spacer()
-                Text("Type your message and press ↵")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color(white: 0.5))
+                if toolRequiresFile && attachedFile == nil {
+                    Text("Add a file, then press ↵")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(white: 0.5))
+                } else if attachedFile != nil && indexingService.isIndexing {
+                    HStack(spacing: 4) {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                        Text("Indexing document...")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color(white: 0.5))
+                    }
+                } else if attachedFile != nil && !attachedFileIndexed {
+                    Text("Waiting for document to be indexed...")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.orange.opacity(0.8))
+                } else {
+                    Text("Type your message and press ↵")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(white: 0.5))
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
@@ -926,80 +1160,174 @@ struct RaycastPanelContent: View {
     
     private var actionBarView: some View {
         HStack(spacing: 0) {
-            // Left side - status and navigation
-            HStack(spacing: 12) {
-                // Status icon
-                Image(systemName: sidecarManager.isHealthy ? "bolt.fill" : "bolt.slash")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(sidecarManager.isHealthy ? Color(white: 0.35) : .orange)
-                
-                // Navigation arrows
-                HStack(spacing: 4) {
-                    HStack(spacing: 2) {
-                        Image(systemName: "chevron.up")
-                            .font(.system(size: 9, weight: .bold))
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 9, weight: .bold))
+            // Left side - attached file indicator (compact) or status/navigation
+            if let file = attachedFile {
+                // Compact attached file indicator
+                HStack(spacing: 8) {
+                    // Small file icon with status indicator
+                    ZStack(alignment: .bottomTrailing) {
+                        Image(systemName: activeToolPrefix?.prefix == "Transcribe:" ? "waveform" : "doc.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.white)
+                            .frame(width: 24, height: 24)
+                            .background(
+                                LinearGradient(
+                                    colors: activeToolPrefix?.gradientColors ?? [Color(red: 0.95, green: 0.3, blue: 0.35)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                in: RoundedRectangle(cornerRadius: 5)
+                            )
+                        
+                        // Status indicator
+                        if indexingService.isIndexing {
+                            Circle()
+                                .fill(Color.white)
+                                .frame(width: 10, height: 10)
+                                .overlay {
+                                    ProgressView()
+                                        .scaleEffect(0.4)
+                                }
+                                .offset(x: 3, y: 3)
+                        } else if attachedFileIndexed {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Color(red: 0.3, green: 0.75, blue: 0.45))
+                                .background(Circle().fill(.white).frame(width: 8, height: 8))
+                                .offset(x: 3, y: 3)
+                        }
                     }
-                    .foregroundStyle(Color(white: 0.3))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 3)
-                    .background(Color(white: 0.82), in: RoundedRectangle(cornerRadius: 4))
                     
-                    Text("Navigate")
+                    // File name and status
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(file.lastPathComponent)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color(white: 0.2))
+                            .lineLimit(1)
+                            .frame(maxWidth: 140, alignment: .leading)
+                        
+                        // Status text
+                        Group {
+                            if let status = indexingStatus {
+                                Text(status)
+                            } else if indexingService.isIndexing {
+                                Text(indexingService.indexingProgress)
+                            } else if attachedFileIndexed {
+                                Text("Ready to use")
+                            } else {
+                                Text("Indexing...")
+                            }
+                        }
+                        .font(.system(size: 10))
+                        .foregroundStyle(attachedFileIndexed ? Color(red: 0.3, green: 0.65, blue: 0.4) : Color(white: 0.5))
+                    }
+                    
+                    // Remove button
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                            attachedFile = nil
+                            attachedFileIndexed = false
+                            attachedFileId = nil
+                            indexingStatus = nil
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color(white: 0.5))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(attachedFileIndexed ? Color(red: 0.90, green: 0.96, blue: 0.91) : Color(white: 0.85))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7)
+                        .strokeBorder(
+                            attachedFileIndexed ? Color(red: 0.3, green: 0.75, blue: 0.45).opacity(0.35) : Color.clear,
+                            lineWidth: 0.5
+                        )
+                )
+                .animation(.spring(response: 0.3, dampingFraction: 0.9), value: attachedFileIndexed)
+            } else {
+                // Default status and navigation
+                HStack(spacing: 14) {
+                    // Status icon
+                    Image(systemName: sidecarManager.isHealthy ? "bolt.fill" : "bolt.slash")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color(white: 0.35))
+                        .foregroundStyle(sidecarManager.isHealthy ? Color(white: 0.35) : .orange)
+                    
+                    // Navigation arrows
+                    HStack(spacing: 5) {
+                        HStack(spacing: 2) {
+                            Image(systemName: "chevron.up")
+                                .font(.system(size: 10, weight: .bold))
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        .foregroundStyle(Color(white: 0.3))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .background(Color(white: 0.80), in: RoundedRectangle(cornerRadius: 5))
+                        
+                        Text("Navigate")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color(white: 0.35))
+                    }
                 }
             }
             
             Spacer()
             
             // Right side - action hints (Raycast style)
-            HStack(spacing: 16) {
+            HStack(spacing: 18) {
                 // Open Command action
-                HStack(spacing: 6) {
+                HStack(spacing: 7) {
                     Text("Open")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Color(white: 0.35))
                     
                     Text("↵")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color(white: 0.3))
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Color(white: 0.82), in: RoundedRectangle(cornerRadius: 4))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color(white: 0.80), in: RoundedRectangle(cornerRadius: 5))
                 }
                 
                 // Divider
                 Rectangle()
-                    .fill(Color(white: 0.75))
-                    .frame(width: 1, height: 14)
+                    .fill(Color(white: 0.72))
+                    .frame(width: 1, height: 18)
                 
                 // Actions
-                HStack(spacing: 6) {
+                HStack(spacing: 7) {
                     Text("Actions")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Color(white: 0.35))
                     
                     HStack(spacing: 2) {
                         Text("⌘")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                         Text("K")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 11, weight: .bold))
                     }
                     .foregroundStyle(Color(white: 0.3))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(Color(white: 0.82), in: RoundedRectangle(cornerRadius: 4))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color(white: 0.80), in: RoundedRectangle(cornerRadius: 5))
                 }
             }
         }
         .padding(.horizontal, 16)
-        .frame(height: 38)
-        .background(Color(white: 0.91))
+        .frame(height: 44)
+        .background(Color(white: 0.89))
+        .staticNoiseOverlay(intensity: 0.06)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(Color(white: 0.80))
+                .fill(Color(white: 0.78))
                 .frame(height: 0.5)
         }
     }
@@ -1030,13 +1358,9 @@ struct RaycastPanelContent: View {
     }
     
     private func executeSelectedAction() {
-        // Handle chat mode - submit the message
+        // Handle chat mode - delegate to submit() for proper document handling
         if showChat {
-            guard !searchQuery.isEmpty else { return }
-            let q = searchQuery
-            searchQuery = ""
-            chatMessages.append(ChatMessage(content: q, isUser: true))
-            streamChatResponse(query: q)
+            submit()
             return
         }
         
@@ -1102,21 +1426,104 @@ struct RaycastPanelContent: View {
         if showChat {
             guard !searchQuery.isEmpty else { return }
             let q = searchQuery
+            let userQuery = queryWithoutPrefix
             searchQuery = ""
-            chatMessages.append(ChatMessage(content: q, isUser: true))
-            streamChatResponse(query: q)
+            
+            // Check if tool mode requires a document
+            if let tool = activeToolPrefix {
+                // Tool mode - require document attachment
+                guard let file = attachedFile else {
+                    chatMessages.append(ChatMessage(content: q, isUser: true))
+                    chatMessages.append(ChatMessage(
+                        content: "Please attach a document first. \(tool.prefix.dropLast()) requires a file to work with.",
+                        isUser: false
+                    ))
+                    return
+                }
+                
+                // Ensure document is indexed before proceeding
+                guard attachedFileIndexed else {
+                    chatMessages.append(ChatMessage(content: q, isUser: true))
+                    chatMessages.append(ChatMessage(
+                        content: "Please wait for the document to finish indexing before asking questions.",
+                        isUser: false
+                    ))
+                    return
+                }
+                
+                let fileName = file.lastPathComponent
+                
+                // Build tool-specific queries that strictly focus on the document
+                let contextQuery: String
+                switch tool.prefix {
+                case "Summarize:":
+                    contextQuery = """
+                    [INSTRUCTION: Only respond based on the content of the attached document '\(fileName)'. Do not use any external knowledge. If the question is unrelated to the document, politely redirect to the document content.]
+                    
+                    Task: Summarize the document '\(fileName)'.
+                    \(userQuery.isEmpty ? "Provide a comprehensive summary covering the main points, key findings, and important details." : "Focus on: \(userQuery)")
+                    """
+                case "Transcribe:":
+                    contextQuery = """
+                    [INSTRUCTION: Only respond based on the content of the attached audio file '\(fileName)'. Do not use any external knowledge. If the question is unrelated to the audio, politely redirect to the audio content.]
+                    
+                    Task: Transcribe the audio file '\(fileName)'.
+                    \(userQuery.isEmpty ? "Provide a complete transcription of the audio content." : "Additional request: \(userQuery)")
+                    """
+                case "Write:":
+                    contextQuery = """
+                    [INSTRUCTION: Only use '\(fileName)' as the reference material. Base your response strictly on the content of this document. Do not incorporate external knowledge beyond what's in the document.]
+                    
+                    Reference document: '\(fileName)'
+                    Task: \(userQuery.isEmpty ? "Generate content based on the themes and information in this document." : userQuery)
+                    """
+                default:
+                    contextQuery = """
+                    [INSTRUCTION: Only respond based on the content of '\(fileName)'. Do not use external knowledge.]
+                    
+                    Regarding '\(fileName)': \(q)
+                    """
+                }
+                
+                chatMessages.append(ChatMessage(content: q, isUser: true))
+                // Pass the document ID to restrict search to ONLY this document
+                streamChatResponse(query: contextQuery, documentIds: attachedFileId.map { [$0] })
+                
+            } else if let file = attachedFile, attachedFileIndexed {
+                // Regular chat with attached file - focus on the document
+                let fileName = file.lastPathComponent
+                let contextQuery = """
+                [INSTRUCTION: Prioritize answering based on the content of the attached document '\(fileName)'. If the question is directly about the document, only use the document content. For general questions, you may use broader knowledge but mention the document context.]
+                
+                Document: '\(fileName)'
+                Question: \(q)
+                """
+                
+                chatMessages.append(ChatMessage(content: q, isUser: true))
+                // Pass the document ID to prioritize this document in search
+                streamChatResponse(query: contextQuery, documentIds: attachedFileId.map { [$0] })
+                
+            } else {
+                // Regular chat without document - search entire knowledge base
+                chatMessages.append(ChatMessage(content: q, isUser: true))
+                streamChatResponse(query: q)
+            }
         } else {
             executeSelectedAction()
         }
     }
     
-    private func streamChatResponse(query: String) {
+    /// Stream chat response with optional document filtering
+    /// - Parameters:
+    ///   - query: The user's query
+    ///   - documentIds: Optional array of document IDs to restrict search to specific documents only
+    private func streamChatResponse(query: String, documentIds: [String]? = nil) {
         isStreaming = true
         streamingContent = ""
         
         Task {
             do {
-                for try await chunk in apiService.chatStream(query: query) {
+                for try await chunk in apiService.chatStream(query: query, documentIds: documentIds) {
                     await MainActor.run {
                         streamingContent += chunk
                     }
@@ -1132,6 +1539,55 @@ struct RaycastPanelContent: View {
                     streamingContent = ""
                     isStreaming = false
                 }
+            }
+        }
+    }
+    
+    // MARK: - Smart Document Indexing
+    
+    /// Index attached file with smart deduplication
+    private func indexAttachedFile(_ url: URL, didStartAccess: Bool) async {
+        await MainActor.run {
+            indexingStatus = "Checking index..."
+        }
+        
+        let result = await indexingService.indexFileIfNeeded(url)
+        
+        // Stop security-scoped access if we started it
+        if didStartAccess {
+            url.stopAccessingSecurityScopedResource()
+        }
+        
+        await MainActor.run {
+            switch result {
+            case .indexed(let id, let fileName):
+                attachedFileIndexed = true
+                attachedFileId = id
+                indexingStatus = "Indexed: \(fileName)"
+                
+                // Auto-clear status after delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        indexingStatus = nil
+                    }
+                }
+                
+            case .alreadyIndexed(let id, let fileName):
+                attachedFileIndexed = true
+                attachedFileId = id
+                indexingStatus = "Ready (cached)"
+                
+                // Auto-clear status after delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        indexingStatus = nil
+                    }
+                }
+                
+            case .failed(let error):
+                attachedFileIndexed = false
+                attachedFileId = nil
+                indexingStatus = "Failed: \(error.localizedDescription)"
             }
         }
     }

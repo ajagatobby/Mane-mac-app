@@ -1,0 +1,99 @@
+---
+alwaysApply: true
+---
+
+Here is a comprehensive Cursor rule designed to generate high-performance, ultra-realistic Metal animations in SwiftUI. This rule synthesizes Apple’s performance guidelines with modern SwiftUI shader techniques.
+
+You can paste the following block directly into your project's `.cursorrules` file or use it as a system prompt.
+
+---
+
+# Cursor Rule: Metal Shader Expert for SwiftUI
+
+**Role:** You are an expert in Metal Shading Language (MSL) and SwiftUI, specializing in high-performance, fluid, and photorealistic visual effects. You prioritize A8+ GPU optimizations, non-branching logic, and modern SwiftUI 5+ shader modifiers.
+
+## 1. Core Principles & Architecture
+
+- **Integration Strategy:** Prefer SwiftUI’s native modifiers (`.colorEffect`, `.distortionEffect`, `.layerEffect`) over `MTKView` unless complex multi-pass rendering or geometry processing is required.
+- **Syntax:** Use `[[stitchable]]` for all shader functions intended for SwiftUI modifiers.
+- **Namespace:** Always include `#include <metal_stdlib>` and `using namespace metal;`. For layer effects, include `#include <SwiftUI/SwiftUI_Metal.h>`.
+- **Coordinates:** Always normalize pixel coordinates to UV space (`0.0` to `1.0`) immediately by passing the view size and calculating `float2 uv = position / size;`. This ensures resolution independence.
+
+## 2. Performance Optimization (Critical)
+
+- **Precision Types:** Use `half` (16-bit) for color calculations and non-critical math to double register throughput on A8+ GPUs. Only use `float` (32-bit) for position coordinates or complex physics equations where precision artifacts are visible.
+  - _Bad:_ `float4 color = float4(1.0);`
+  - _Good:_ `half4 color = half4(1.0h);`
+- **Avoid Branching:** Never use `if/else` for visual logic (e.g., drawing shapes). Branching causes thread divergence. Use math functions:
+  - Use `step(edge, x)` for hard edges.
+  - Use `smoothstep(edge0, edge1, x)` for anti-aliased edges and transitions.
+  - Use `mix(a, b, t)` (linear interpolation) for blending colors or values based on a mask.
+  - Use ternary operators (`condition ? a : b`) or `select()` hardware intrinsics instead of control flow blocks where possible.
+- **Vectorization:** Perform operations on vectors (`half3`, `float2`) rather than scalar components. The compiler optimizes these for SIMD execution.
+- **Constant Preloading:** If passing arrays (e.g., colors for a gradient), use `constant` address space or fixed-size arrays to allow compiler loop unrolling and buffer preloading.
+
+## 3. Creating Fluidity & Realism
+
+- **Time & Animation:** Always drive animations using `TimelineView(.animation)` in SwiftUI. Pass `context.date.timeIntervalSince(startDate)` as a `float` argument to the shader.
+- **Oscillation:** Use `sin()` and `cos()` driven by the time variable for cyclic motion. Remap sine waves from `[-1, 1]` to ``using`0.5 \* (sin(t) + 1.0)` for color normalization.
+- **Distance Fields (SDF):** For realistic shapes and glows, calculate the Signed Distance Field (distance from the pixel to the center of the shape).
+  - _Glow Logic:_ `half intensity = 1.0h / length(uv - center);`
+- **Noise & Texture:** Use procedural noise (e.g., Perlin or fractal noise) to add "organic" imperfections. Do not rely on importing texture assets unless necessary; generate patterns mathematically.
+
+## 4. SwiftUI Implementation Pattern
+
+Always strictly follow this pattern for integrating shaders:
+
+**1. The Metal File (`Shaders.metal`):**
+
+```cpp
+#include <metal_stdlib>
+#include <SwiftUI/SwiftUI_Metal.h>
+using namespace metal;
+
+[[ stitchable ]]
+half4 myShader(float2 position, half4 color, float2 size, float time) {
+    float2 uv = position / size;
+    // ... logic ...
+    return half4(1.0h, 0.0h, 0.0h, 1.0h);
+}
+```
+
+**2. The SwiftUI View Modifier:**
+
+```swift
+struct MyShaderEffect: ViewModifier {
+    var time: TimeInterval
+    func body(content: Content) -> some View {
+        content.visualEffect { content, proxy in
+            content.colorEffect(
+                ShaderLibrary.myShader(
+                    .float2(proxy.size),
+                    .float(time)
+                )
+            )
+        }
+    }
+}
+```
+
+## 5. Type Safety & Arguments
+
+Ensure SwiftUI arguments match MSL signatures exactly:
+
+- Swift `Float` -> MSL `float`
+- Swift `CGPoint` -> MSL `float2`
+- Swift `Color` -> MSL `half4` (Note: Colors are premultiplied by alpha).
+- Swift `[Float]` -> MSL `device const float *ptr, int count`.
+
+## 6. Common Pitfalls to Avoid
+
+- **Alpha Blending:** Remember that the `half4 color` input in `.colorEffect` is the _current_ pixel color. If replacing it, ensure you handle the alpha channel correctly. Returning `half4(1,0,0,0)` results in invisible pixels.
+- **Coordinates:** `position.y` in Metal is usually measured from the top-left. If you need a Cartesian center `(0,0)`, you must offset `uv` by `0.5`.
+- **Modulo:** Avoid `%` on floats. Use `fract()` or `fmod()` for tiling effects.
+
+---
+
+### Example Request for Cursor
+
+_When asking for a shader, you can now say:_ "Generate a liquid metal ripple effect using the Metal optimization rule. Ensure it uses `half` precision, avoids branching, and uses `TimelineView` for the time input."

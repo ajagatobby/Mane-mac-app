@@ -349,10 +349,46 @@ export class LanceDBService implements OnModuleInit {
    * Combines vector search (semantic) with keyword matching (exact)
    * @param query - The search query
    * @param limit - Maximum number of results. Use 0 to return all results.
+   * @param documentIds - Optional array of document IDs to filter to
    */
-  async hybridSearch(query: string, limit: number = 5): Promise<SearchResult[]> {
+  async hybridSearch(query: string, limit: number = 5, documentIds?: string[]): Promise<SearchResult[]> {
     if (!this.textTable) {
       throw new Error('Text table not initialized');
+    }
+
+    // If documentIds are provided, fetch those specific documents instead of searching
+    if (documentIds && documentIds.length > 0) {
+      this.logger.log(`Filtering search to ${documentIds.length} specific document(s)`);
+      const filteredResults: SearchResult[] = [];
+      
+      for (const docId of documentIds) {
+        try {
+          // Query for the specific document by ID
+          const docs = await this.textTable
+            .query()
+            .where(`id = "${docId}"`)
+            .limit(1)
+            .toArray();
+          
+          if (docs.length > 0) {
+            const row = docs[0] as any;
+            filteredResults.push({
+              id: row.id,
+              content: row.content,
+              filePath: row.filePath,
+              fileName: row.fileName,
+              mediaType: row.mediaType || 'text',
+              thumbnailPath: row.thumbnailPath,
+              metadata: this.parseMetadata(row.metadata),
+              score: 1.0, // Max relevance since explicitly requested
+            });
+          }
+        } catch (err: any) {
+          this.logger.warn(`Failed to fetch document ${docId}: ${err.message}`);
+        }
+      }
+      
+      return filteredResults;
     }
 
     // If limit is 0, we want all results

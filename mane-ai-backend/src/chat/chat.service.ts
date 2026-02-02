@@ -28,7 +28,10 @@ export class ChatService {
     this.logger.log(
       `Processing streaming chat query: ${dto.query.substring(0, 50)}...`,
     );
-    yield* this.ollamaService.chatStream(dto.query);
+    if (dto.documentIds?.length) {
+      this.logger.log(`Filtering to documents: ${dto.documentIds.join(', ')}`);
+    }
+    yield* this.ollamaService.chatStream(dto.query, dto.documentIds);
   }
 
   async search(dto: SearchQueryDto): Promise<SearchResponseDto> {

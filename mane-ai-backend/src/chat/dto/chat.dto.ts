@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsArray } from 'class-validator';
 
 export type MediaType = 'text' | 'image' | 'audio';
 
@@ -9,6 +9,11 @@ export class ChatQueryDto {
   @IsOptional()
   @IsBoolean()
   stream?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  documentIds?: string[];
 }
 
 export class ChatResponseDto {

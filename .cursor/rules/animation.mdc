@@ -1,0 +1,127 @@
+---
+alwaysApply: true
+---
+
+Here is the updated **Advanced Cursor Rule** tailored specifically for **SwiftUI**.
+
+This rule translates abstract Emotional Design theories (Don Norman) and physics principles (Hooke’s Law) into concrete SwiftUI modifiers (`.spring`, `.matchedGeometryEffect`, `.sensoryFeedback`). It integrates findings from **Yapiko** (Emotional Design), **Siddhi InfoSoft** (Animation timing), and **Snapchat’s** design guidelines.
+
+***
+
+### The "SwiftUI Neuro-Physics" Cursor Rule
+
+```markdown
+# ROLE: SwiftUI Emotional Architect & Physics Engineer
+
+# OBJECTIVE: 
+Generate SwiftUI code that implements "Emotional Design" (Visceral, Behavioral, Reflective) using rigorous physics-based animation modifiers. You must reject linear transitions (`.linear`) in favor of interpolated spring systems that mimic real-world mass and friction.
+
+# CORE PHILOSOPHY (The "Why"):
+1. VISCERAL (The Gut): Use color and shape to trigger instinct.
+   - **Warm Colors/Round Shapes:** Trigger energy and friendliness (Source: Yapiko).
+   - **Cool Colors/Symmetry:** Trigger trust and calm (Source: Yapiko).
+2. BEHAVIORAL (The Feel): The UI must acknowledge every touch immediately via physics-based motion and haptics (Source: Siddhi).
+3. REFLECTIVE (The Bond): Use narrative elements (mascots, Rive animations) to create long-term user loyalty (Source: Yapiko).
+
+# THE PHYSICS ENGINE (SwiftUI Mathematical Implementation):
+
+## 1. The "Joy" Spring (Under-Damped Oscillator)
+*Use for: Likes, Success States, "Playful" Buttons.*
+- **Physics Principle:** Hooke’s Law ($F = -kx - cv$) with low damping ratio ($\zeta < 1$).
+- **The Math:** A low `dampingFraction` causes the mass to overshoot equilibrium before settling.
+- **SwiftUI Code:**
+  ```swift
+  .animation(.spring(response: 0.5, dampingFraction: 0.5, blendDuration: 0), value: isActive)
+  ```
+- **Why:** The overshoot creates a "bouncy" energetic feel, mimicking high tension release (Source: Siddhi, Yapiko).
+
+## 2. The "Calm" Spring (Critically Damped Oscillator)
+*Use for: Modal sheets, Navigation transitions, "Trusted" actions.*
+- **Physics Principle:** Critical Damping ($\zeta = 1$). The system returns to equilibrium as fast as possible without oscillating.
+- **The Math:** Eliminates the overshoot vector to prevent visual "noise."
+- **SwiftUI Code:**
+  ```swift
+  .animation(.spring(response: 0.6, dampingFraction: 1.0, blendDuration: 0), value: isPresented)
+  ```
+- **Why:** Reduces cognitive load and conveys stability/professionalism (Source: Yapiko).
+
+## 3. The "Tactile" Squish (Conservation of Volume)
+*Use for: Primary Action Buttons (The Snapchat/SnapOS Style).*
+- **Physics Principle:** Conservation of Volume. If mass is compressed on the Y-axis, it must expand on the X-axis.
+- **Mechanism:** On press, scale down to 0.9; on release, spring back.
+- **SwiftUI Code:**
+  ```swift
+  .scaleEffect(isPressed ? 0.9 : 1.0)
+  .animation(.spring(response: 0.4, dampingFraction: 0.6), value: isPressed)
+  ```
+- **Source:** "Buttons hint at their pinch action with a progressive 'squish' animation" (Source: Snap).
+
+# IMPLEMENTATION RULES:
+
+## Rule 1: The Temporal Window (200ms–500ms)
+- **Constraint:** All explicit durations must fall within `0.2` to `0.5` seconds.
+- **Reasoning:** <200ms is perceived as a glitch; >500ms is perceived as latency.
+- **SwiftUI:**
+  ```swift
+  withAnimation(.easeInOut(duration: 0.35)) { ... } // Ideal "Natural" Speed
+  ```
+- **Source:** "Ideal animation duration is typically 200–500ms" (Source: Siddhi).
+
+## Rule 2: Haptic Bridging (SensoryFeedback)
+- **Requirement:** Visual physics must be paired with tactile physics.
+- **SwiftUI API:** Use `.sensoryFeedback` (iOS 17+) attached to state changes.
+  - **Success/Joy:** `.sensoryFeedback(.success, trigger: isSuccess)`
+  - **Tactile/Toggle:** `.sensoryFeedback(.selection, trigger: isSelected)`
+  - **Error/Warning:** `.sensoryFeedback(.error, trigger: hasError)`
+- **Source:** "Microinteractions... subtle sounds, or vibrations upon actions" (Source: Yapiko).
+
+## Rule 3: Vector State Machines (Rive & Lottie)
+- **Requirement:** For complex emotional assets (mascots, loading states), avoid GIFs. Use Rive or Lottie.
+- **Implementation:** Use `RiveViewModel` to drive state changes via SwiftUI bindings.
+- **Source:** "Rive animations are vector-based... react to user input" (Source: Hooman, Premier Octet).
+
+# CODE GENERATION CHECKLIST (Self-Correction):
+Before outputting code, verify:
+1. **Math Check:** Are we using `.spring()`? If using `.linear`, reject and replace (unless it's a spinning loader).
+2. **Physics Check:** Does the button "Squish" or "Ripple" on touch? (Behavioral Design).
+3. **Accessibility Check:** Did we include `accessibilityLabel` so non-visual users perceive the state change?
+```
+
+***
+
+### How this Rule Applies the Sources to SwiftUI
+
+#### 1. The Physics of `dampingFraction` (Hooke’s Law)
+The rule explicitly bans linear animation for interactions.
+*   **Source:** Snap developers emphasize that motion should "cue an origin point" and use "squish" animations to hint at physical interaction.
+*   **The Math:** By adjusting the SwiftUI `dampingFraction`, we manipulate the **Damping Ratio ($\zeta$)**.
+    *   **$\zeta < 1$ (e.g., 0.5):** The system is **under-damped**. The UI element has "momentum" and swings past its target before settling. This creates the "Energy/Joy" feeling described by Yapiko.
+    *   **$\zeta = 1$ (e.g., 1.0):** The system is **critically damped**. It reaches the target as fast as possible without overshooting. This creates the "Trust/Calm" feeling.
+
+#### 2. The "Squish" Effect (Snapchat Style)
+The rule mandates a specific `scaleEffect` implementation.
+*   **Source:** Snap OS documentation describes UI that "jiggles and flexes" or uses a "progressive squish animation".
+*   **SwiftUI Implementation:**
+    ```swift
+    Button(action: {}) {
+        Text("Snap")
+    }
+    .buttonStyle(SquishableButtonStyle()) // Custom style using scaleEffect(0.9)
+    ```
+    This mimics the physical deformation of a real object being pressed, fulfilling the **Behavioral** level of design described by Don Norman.
+
+#### 3. State-Driven Motion (Rive)
+The rule integrates Rive for **Reflective** design (Mascots/Storytelling).
+*   **Source:** Rive animations are cited as superior to video because they can "react to user input" (e.g., a character looking at where you type).
+*   **SwiftUI Implementation:** Instead of a static `Image`, the rule guides the AI to generate:
+    ```swift
+    RiveViewModel(fileName: "mascot").view()
+        .onChange(of: userInput) { input in
+            mascotVM.setInput("lookDirection", value: input)
+        }
+    ```
+    This creates the feeling that the app "understands" the user, fostering the **Reflective** emotional bond.
+
+#### 4. The 200ms–500ms Law
+*   **Source:** "Ideal animation duration is typically 200–500ms".
+*   **SwiftUI Implementation:** The rule constrains `withAnimation` blocks to this window. Faster than 200ms is unnoticeable (cognitive limit); slower than 500ms feels like lag (system performance perception).

@@ -134,7 +134,7 @@ export class OllamaService implements OnModuleInit {
     }
   }
 
-  async *chatStream(query: string): AsyncGenerator<StreamChunk, void, unknown> {
+  async *chatStream(query: string, documentIds?: string[]): AsyncGenerator<StreamChunk, void, unknown> {
     if (!this.chatModel) {
       throw new Error('Chat model not initialized');
     }
@@ -153,14 +153,17 @@ export class OllamaService implements OnModuleInit {
     const stats = await this.getDocumentStats();
 
     // Search for relevant documents (text + media)
+    // If documentIds are provided, filter to only those documents
     this.logger.log('Searching for relevant context...');
-    const searchResults = await this.searchAllDocuments(query, 5);
+    const searchResults = await this.searchAllDocuments(query, 5, documentIds);
 
     // Build context from search results
     const context = this.buildContext(searchResults);
 
-    // Create the RAG prompt with stats
-    const systemPrompt = this.createSystemPrompt(context, stats);
+    // Create the RAG prompt with stats (adjust for filtered search)
+    const systemPrompt = documentIds?.length 
+      ? this.createDocumentFocusedPrompt(context)
+      : this.createSystemPrompt(context, stats);
 
     this.logger.log('Starting streaming response from Ollama...');
     const messages = [new SystemMessage(systemPrompt), new HumanMessage(query)];
@@ -188,10 +191,14 @@ export class OllamaService implements OnModuleInit {
 
   /**
    * Search documents using MiniLM (384-dim) for text/audio/image captions
+   * @param query - The search query
+   * @param limit - Maximum number of results
+   * @param documentIds - Optional array of document IDs to filter to
    */
   private async searchAllDocuments(
     query: string,
     limit: number,
+    documentIds?: string[],
   ): Promise<
     Array<{
       id: string;
@@ -207,7 +214,7 @@ export class OllamaService implements OnModuleInit {
     this.logger.log('Searching documents with MiniLM...');
 
     try {
-      const results = await this.lanceDBService.hybridSearch(query, limit);
+      const results = await this.lanceDBService.hybridSearch(query, limit, documentIds);
       this.logger.log(`Found ${results.length} results`);
       return results;
     } catch (err: any) {
@@ -305,6 +312,24 @@ INSTRUCTIONS:
 3. Cite which document(s) you're referencing when relevant.
 4. If the context doesn't contain enough information, say so.
 5. Be concise. Do NOT suggest how to organize files.`;
+  }
+
+  /**
+   * Create a system prompt focused on a specific document
+   * Used when documentIds filter is provided (tool mode)
+   */
+  private createDocumentFocusedPrompt(context: string): string {
+    return `You are a helpful AI assistant. You MUST ONLY answer based on the document content provided below.
+
+DOCUMENT CONTENT:
+${context}
+
+CRITICAL INSTRUCTIONS:
+1. ONLY use information from the document above to answer.
+2. Do NOT use any external knowledge or information from other documents.
+3. If the user's question cannot be answered from this document alone, say so clearly.
+4. When summarizing, cover all main points from the document.
+5. Be thorough and accurate in your response.`;
   }
 
   getStatus(): { available: boolean; model: string; url: string } {
