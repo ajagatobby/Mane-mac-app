@@ -18,6 +18,9 @@ const CHUNK_WORD_COUNT = 280;
 const CHUNK_OVERLAP_WORDS = 50;
 const MIN_CONTENT_FOR_CHUNKING = 800;
 
+// Max file size for ingest (1GB) - applies to text, audio, and image files
+const MAX_FILE_SIZE_BYTES = 1024 * 1024 * 1024;
+
 @Injectable()
 export class IngestService {
   private readonly logger = new Logger(IngestService.name);
@@ -58,6 +61,16 @@ export class IngestService {
   async ingestDocument(dto: IngestDocumentDto): Promise<IngestResponseDto> {
     try {
       this.logger.log(`Ingesting document: ${dto.filePath}`);
+
+      // Check file size limit for all media types
+      if (fs.existsSync(dto.filePath)) {
+        const stats = fs.statSync(dto.filePath);
+        if (stats.size > MAX_FILE_SIZE_BYTES) {
+          throw new Error(
+            `File exceeds size limit of ${MAX_FILE_SIZE_BYTES / 1024 / 1024}MB (file: ${(stats.size / 1024 / 1024).toFixed(1)}MB)`,
+          );
+        }
+      }
 
       // Determine media type
       const mediaType =
