@@ -50,12 +50,14 @@ Most AI tools send your data to the cloud. **Mane AI is different** — it's a n
 <td width="50%">
 
 ### 📚 Unified Knowledge Base
+
 Import folders and files to build your personal knowledge base. Mane AI automatically detects code projects and indexes them intelligently.
 
 </td>
 <td width="50%">
 
 ### 💬 RAG-Powered Chat
+
 Ask questions about your documents and get AI responses with source citations. The AI retrieves relevant context before answering.
 
 </td>
@@ -64,12 +66,14 @@ Ask questions about your documents and get AI responses with source citations. T
 <td width="50%">
 
 ### 🔍 Semantic Search
+
 Find files by what they mean, not just exact keywords. Search across documents, code, and even image descriptions.
 
 </td>
 <td width="50%">
 
 ### 🎨 Multimodal Support
+
 Index images (with AI captions) and audio files (with transcription). Ask questions about visual and audio content.
 
 </td>
@@ -78,12 +82,14 @@ Index images (with AI captions) and audio files (with transcription). Ask questi
 <td width="50%">
 
 ### 🛡️ 100% Private
+
 No telemetry, no cloud, no accounts. Your data never leaves your machine. Period.
 
 </td>
 <td width="50%">
 
 ### ⚡ Native Performance
+
 Built with SwiftUI for a fast, responsive experience. Metal-accelerated animations and efficient resource usage.
 
 </td>
@@ -98,12 +104,12 @@ Built with SwiftUI for a fast, responsive experience. Metal-accelerated animatio
 
 Before installing Mane AI, you need:
 
-| Requirement | Installation |
-|-------------|--------------|
-| **macOS 14+** | Sonoma or later |
-| **Ollama** | `brew install ollama` |
-| **Node.js 20+** | `brew install node` |
-| **pnpm** | `npm install -g pnpm` |
+| Requirement     | Installation          |
+| --------------- | --------------------- |
+| **macOS 14+**   | Sonoma or later       |
+| **Ollama**      | `brew install ollama` |
+| **Node.js 20+** | `brew install node`   |
+| **pnpm**        | `npm install -g pnpm` |
 
 ### Step 1: Install Ollama and Pull Model
 
@@ -168,35 +174,35 @@ Open `ManeAI/ManePaw.xcodeproj` in Xcode and press `Cmd + R`.
 
 Click **Import** to add files or folders to your knowledge base:
 
-| Content Type | How It's Processed |
-|--------------|-------------------|
+| Content Type      | How It's Processed                                                                                   |
+| ----------------- | ---------------------------------------------------------------------------------------------------- |
 | **Code Projects** | Detected by manifest files (package.json, Cargo.toml, etc.). Indexed with function/class signatures. |
-| **Documents** | Text files are chunked and embedded for semantic search. |
-| **Images** | AI generates captions describing the visual content. |
-| **Audio** | Automatically transcribed to searchable text. |
+| **Documents**     | Text files are chunked and embedded for semantic search.                                             |
+| **Images**        | AI generates captions describing the visual content.                                                 |
+| **Audio**         | Automatically transcribed to searchable text.                                                        |
 
 ### Supported File Types
 
-| Category | Extensions |
-|----------|------------|
-| **Text** | `.txt` `.md` `.json` `.yaml` `.xml` `.html` `.css` `.csv` |
-| **Code** | `.swift` `.ts` `.js` `.py` `.rs` `.go` `.java` `.rb` `.php` |
-| **Images** | `.png` `.jpg` `.jpeg` `.gif` `.webp` `.heic` |
-| **Audio** | `.mp3` `.wav` `.m4a` `.aiff` `.flac` `.ogg` |
+| Category   | Extensions                                                  |
+| ---------- | ----------------------------------------------------------- |
+| **Text**   | `.txt` `.md` `.json` `.yaml` `.xml` `.html` `.css` `.csv`   |
+| **Code**   | `.swift` `.ts` `.js` `.py` `.rs` `.go` `.java` `.rb` `.php` |
+| **Images** | `.png` `.jpg` `.jpeg` `.gif` `.webp` `.heic`                |
+| **Audio**  | `.mp3` `.wav` `.m4a` `.aiff` `.flac` `.ogg`                 |
 
 ### Project Detection
 
 Mane AI automatically detects projects by these manifest files:
 
-| Manifest | Language/Framework |
-|----------|-------------------|
-| `package.json` | Node.js / TypeScript |
-| `Cargo.toml` | Rust |
-| `pyproject.toml` / `requirements.txt` | Python |
-| `go.mod` | Go |
-| `Package.swift` | Swift |
-| `pom.xml` / `build.gradle` | Java |
-| `pubspec.yaml` | Flutter |
+| Manifest                              | Language/Framework   |
+| ------------------------------------- | -------------------- |
+| `package.json`                        | Node.js / TypeScript |
+| `Cargo.toml`                          | Rust                 |
+| `pyproject.toml` / `requirements.txt` | Python               |
+| `go.mod`                              | Go                   |
+| `Package.swift`                       | Swift                |
+| `pom.xml` / `build.gradle`            | Java                 |
+| `pubspec.yaml`                        | Flutter              |
 
 ### Chat Examples
 
@@ -274,37 +280,37 @@ mane-ai/
 <details>
 <summary><strong>Documents API</strong></summary>
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/ingest` | POST | Ingest a text document |
-| `/ingest/media` | POST | Ingest image/audio file |
-| `/documents` | GET | List all documents |
-| `/documents/:id` | DELETE | Delete a document |
+| Endpoint         | Method | Description             |
+| ---------------- | ------ | ----------------------- |
+| `/ingest`        | POST   | Ingest a text document  |
+| `/ingest/media`  | POST   | Ingest image/audio file |
+| `/documents`     | GET    | List all documents      |
+| `/documents/:id` | DELETE | Delete a document       |
 
 </details>
 
 <details>
 <summary><strong>Chat API</strong></summary>
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/chat` | POST | Chat with RAG context |
-| `/chat/search` | POST | Semantic search |
-| `/chat/status` | GET | Check Ollama status |
+| Endpoint       | Method | Description           |
+| -------------- | ------ | --------------------- |
+| `/chat`        | POST   | Chat with RAG context |
+| `/chat/search` | POST   | Semantic search       |
+| `/chat/status` | GET    | Check Ollama status   |
 
 </details>
 
 <details>
 <summary><strong>Projects API</strong></summary>
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/projects/index` | POST | Index a code project |
-| `/projects` | GET | List all projects |
-| `/projects/:id` | GET | Get project details |
-| `/projects/:id` | DELETE | Delete a project |
-| `/projects/search` | POST | Search projects |
-| `/projects/search/code` | POST | Search code signatures |
+| Endpoint                | Method | Description            |
+| ----------------------- | ------ | ---------------------- |
+| `/projects/index`       | POST   | Index a code project   |
+| `/projects`             | GET    | List all projects      |
+| `/projects/:id`         | GET    | Get project details    |
+| `/projects/:id`         | DELETE | Delete a project       |
+| `/projects/search`      | POST   | Search projects        |
+| `/projects/search/code` | POST   | Search code signatures |
 
 </details>
 
@@ -316,11 +322,13 @@ mane-ai/
 <summary><strong>Ollama not connecting</strong></summary>
 
 1. Make sure Ollama is running:
+
    ```bash
    ollama serve
    ```
 
 2. Check if the model is downloaded:
+
    ```bash
    ollama list
    ```
@@ -383,9 +391,9 @@ I'm available for freelance and contract work! If you need help building:
 **Let's connect:**
 
 <p align="center">
-  <a href="https://twitter.com/ajaaborisade"><img src="https://img.shields.io/badge/Twitter-@ajaaborisade-1DA1F2?style=flat-square&logo=twitter&logoColor=white" alt="Twitter"></a>
+  <a href="https://twitter.com/ajagatobby"><img src="https://img.shields.io/badge/Twitter-@ajagatobby?style=flat-square&logo=twitter&logoColor=white" alt="Twitter"></a>
   <a href="https://github.com/ajagatobby"><img src="https://img.shields.io/badge/GitHub-ajagatobby-181717?style=flat-square&logo=github" alt="GitHub"></a>
-  <a href="mailto:your-email@example.com"><img src="https://img.shields.io/badge/Email-Contact%20Me-red?style=flat-square&logo=gmail&logoColor=white" alt="Email"></a>
+  <a href="mailto:ajagatobby@gmail.com"><img src="https://img.shields.io/badge/Email-Contact%20Me-red?style=flat-square&logo=gmail&logoColor=white" alt="Email"></a>
 </p>
 
 ---
