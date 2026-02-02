@@ -443,12 +443,12 @@ struct RaycastPanelContent: View {
     @Namespace private var animation
     
     // Quick actions data - vibrant colors like Raycast
-    private let quickActions: [(title: String, subtitle: String, icon: String, color: Color, id: String)] = [
-        ("Search All", "Search your knowledge base", "magnifyingglass", Color(red: 0.35, green: 0.45, blue: 0.95), "searchall"),
-        ("AI Chat", "Mane-paw AI", "sparkles", Color(red: 0.95, green: 0.3, blue: 0.35), "chat"),
-        ("Index Files", "Add files or folders", "plus.square.on.square", Color(red: 0.35, green: 0.65, blue: 0.95), "index"),
-        ("Documents", "Search files", "doc.fill", Color(red: 1.0, green: 0.78, blue: 0.28), "search"),
-        ("Projects", "Browse codebases", "folder.fill", Color(red: 0.98, green: 0.6, blue: 0.2), "projects")
+    private let quickActions: [(title: String, subtitle: String, icon: String, color: Color, id: String, useAssetImage: Bool)] = [
+        ("Search All", "Search your knowledge base", "magnifyingglass", Color(red: 0.35, green: 0.45, blue: 0.95), "searchall", false),
+        ("AI Chat", "Mane-paw AI", "icon", Color(red: 0.95, green: 0.3, blue: 0.35), "chat", true),
+        ("Index Files", "Add files or folders", "plus.square.on.square", Color(red: 0.35, green: 0.65, blue: 0.95), "index", false),
+        ("Documents", "Search files", "doc.fill", Color(red: 1.0, green: 0.78, blue: 0.28), "search", false),
+        ("Projects", "Browse codebases", "folder.fill", Color(red: 0.98, green: 0.6, blue: 0.2), "projects", false)
     ]
     
     // Tools data - AI-powered utility tools
@@ -976,7 +976,8 @@ struct RaycastPanelContent: View {
                         title: action.title,
                         subtitle: action.subtitle,
                         accessoryText: "Command",
-                        isSelected: selectedIndex == index
+                        isSelected: selectedIndex == index,
+                        useAssetImage: action.useAssetImage
                     ) {
                         handleQuickAction(action.id)
                     }
@@ -1269,12 +1270,13 @@ struct RaycastPanelContent: View {
     
     private var askAIRow: some View {
         RaycastRow(
-            icon: "sparkles",
+            icon: "icon",
             iconColor: Color(red: 0.95, green: 0.3, blue: 0.35),
             title: "Ask AI: \"\(searchQuery)\"",
             subtitle: "Get an AI-powered answer",
             accessoryText: "↵",
-            isSelected: selectedIndex == 0
+            isSelected: selectedIndex == 0,
+            useAssetImage: true
         ) {
             askAIDirectly()
         }
@@ -1340,13 +1342,16 @@ struct RaycastPanelContent: View {
                 
                 Spacer()
                 
-                HStack(spacing: 4) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 12))
+                HStack(spacing: 6) {
+                    Image("icon")
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 16, height: 16)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
                     Text("AI Chat")
                         .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color(white: 0.4))
                 }
-                .foregroundStyle(Color(white: 0.4))
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -2316,6 +2321,7 @@ struct RaycastRow: View {
     let subtitle: String?
     let accessoryText: String
     let isSelected: Bool
+    var useAssetImage: Bool = false  // For Mane logo
     let action: () -> Void
     
     @State private var isHovered = false
@@ -2323,16 +2329,25 @@ struct RaycastRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                // Icon - colored rounded square with white SF Symbol
-                ZStack {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(iconColor)
+                // Icon - colored rounded square with white SF Symbol or asset image
+                if useAssetImage {
+                    Image(icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
                         .frame(width: 28, height: 28)
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                         .shadow(color: iconColor.opacity(0.3), radius: 2, y: 1)
-                    
-                    Image(systemName: icon)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(iconColor)
+                            .frame(width: 28, height: 28)
+                            .shadow(color: iconColor.opacity(0.3), radius: 2, y: 1)
+                        
+                        Image(systemName: icon)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
                 }
                 
                 // Title and optional subtitle inline
@@ -2431,15 +2446,15 @@ struct SearchResultRow: View {
                 // Actions on hover/selection
                 if isSelected || isHovered {
                     HStack(spacing: 4) {
-                        // Ask AI button
+                        // Ask AI button - Mane logo
                         Button {
                             onAskAI()
                         } label: {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(Color(red: 0.95, green: 0.3, blue: 0.35))
+                            Image("icon")
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
                                 .frame(width: 22, height: 22)
-                                .background(Color(red: 0.95, green: 0.3, blue: 0.35).opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
                         }
                         .buttonStyle(.plain)
                         .help("Ask AI about this file")
@@ -3167,15 +3182,12 @@ struct ChatBubble: View {
             }
             
             if !message.isUser {
-                // AI avatar
-                Image(systemName: "sparkles")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
+                // AI avatar - Mane logo
+                Image("icon")
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
                     .frame(width: 24, height: 24)
-                    .background(
-                        LinearGradient(colors: [Color(red: 0.95, green: 0.3, blue: 0.35), Color(red: 0.85, green: 0.25, blue: 0.4)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                        in: RoundedRectangle(cornerRadius: 6)
-                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
             }
             
             VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
@@ -3353,15 +3365,12 @@ struct StreamingChatBubble: View {
     
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            // AI avatar
-            Image(systemName: "sparkles")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
+            // AI avatar - Mane logo
+            Image("icon")
+                .resizable()
+                .aspectRatio(contentMode: .fill)
                 .frame(width: 24, height: 24)
-                .background(
-                    LinearGradient(colors: [Color(red: 0.95, green: 0.3, blue: 0.35), Color(red: 0.85, green: 0.25, blue: 0.4)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: RoundedRectangle(cornerRadius: 6)
-                )
+                .clipShape(RoundedRectangle(cornerRadius: 6))
             
             VStack(alignment: .leading, spacing: 4) {
                 Text("Mane-paw")
@@ -3403,21 +3412,12 @@ struct TranscriptionShimmerBubble: View {
     
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            // AI avatar with waveform icon for transcription
-            ZStack {
-                Image(systemName: "waveform")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
-            }
-            .frame(width: 24, height: 24)
-            .background(
-                LinearGradient(
-                    colors: [Color(red: 0.55, green: 0.4, blue: 0.95), Color(red: 0.45, green: 0.3, blue: 0.85)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                in: RoundedRectangle(cornerRadius: 6)
-            )
+            // AI avatar - Mane logo for transcription
+            Image("icon")
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 24, height: 24)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
             
             VStack(alignment: .leading, spacing: 4) {
                 Text("Transcribing")
@@ -3550,21 +3550,12 @@ struct SummarizationShimmerBubble: View {
     
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            // AI avatar with document icon for summarization
-            ZStack {
-                Image(systemName: "text.alignleft")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white)
-            }
-            .frame(width: 24, height: 24)
-            .background(
-                LinearGradient(
-                    colors: gradientColors,
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                in: RoundedRectangle(cornerRadius: 6)
-            )
+            // AI avatar - Mane logo for summarization
+            Image("icon")
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 24, height: 24)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
             
             VStack(alignment: .leading, spacing: 4) {
                 // Animated "Summarizing" text with shimmer

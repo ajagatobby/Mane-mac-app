@@ -139,21 +139,12 @@ struct OnboardingView: View {
     private var headerView: some View {
         HStack {
             HStack(spacing: 10) {
-                // App icon
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(
-                        LinearGradient(
-                            colors: [primaryPink, primaryPinkDark],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                // App icon - Mane logo
+                Image("icon")
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
                     .frame(width: 32, height: 32)
-                    .overlay {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Mane-paw")
@@ -256,21 +247,12 @@ private struct WelcomeStep: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 28) {
-                // Icon with entrance animation
-                RoundedRectangle(cornerRadius: 24)
-                    .fill(
-                        LinearGradient(
-                            colors: [primaryPink, primaryPinkDark],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                // Icon with entrance animation - Mane logo
+                Image("icon")
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
                     .frame(width: 80, height: 80)
-                    .overlay {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 36, weight: .medium))
-                            .foregroundStyle(.white)
-                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 20))
                     .shadow(color: primaryPink.opacity(0.4), radius: 20, y: 8)
                     .scaleEffect(showIcon ? 1 : 0.6)
                     .opacity(showIcon ? 1 : 0)
