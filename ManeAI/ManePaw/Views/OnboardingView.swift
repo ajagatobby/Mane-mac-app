@@ -199,9 +199,11 @@ struct OnboardingView: View {
                         Text("Back")
                             .font(.system(size: 13, weight: .medium))
                     }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
                     .foregroundStyle(Color(white: 0.4))
                 }
-                .buttonStyle(FluidButtonStyle())
+                .buttonStyle(SecondaryButtonStyle())
                 .transition(.opacity.combined(with: .move(edge: .leading)))
             }
             
@@ -556,12 +558,97 @@ private struct TipItem: View {
 
 // MARK: - Button Styles
 
+/// Fluid button style with micro hover animations
+/// Includes subtle lift, glow, and bounce effects
 private struct FluidButtonStyle: ButtonStyle {
+    var enableHoverEffect: Bool = true
+    
     func makeBody(configuration: Configuration) -> some View {
+        FluidButtonContent(
+            configuration: configuration,
+            enableHoverEffect: enableHoverEffect
+        )
+    }
+}
+
+private struct FluidButtonContent: View {
+    let configuration: ButtonStyleConfiguration
+    let enableHoverEffect: Bool
+    
+    @State private var isHovering = false
+    @State private var hoverScale: CGFloat = 1.0
+    @State private var hoverGlow: CGFloat = 0
+    @State private var hoverOffset: CGFloat = 0
+    
+    var body: some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
-            .opacity(configuration.isPressed ? 0.8 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.96 : hoverScale)
+            .offset(y: configuration.isPressed ? 1 : hoverOffset)
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .shadow(
+                color: Color(red: 0.95, green: 0.4, blue: 0.55).opacity(hoverGlow * 0.3),
+                radius: 8 * hoverGlow,
+                y: 2
+            )
+            .animation(.spring(response: 0.2, dampingFraction: 0.6), value: configuration.isPressed)
+            .animation(.spring(response: 0.35, dampingFraction: 0.7), value: isHovering)
+            .onHover { hovering in
+                guard enableHoverEffect else { return }
+                isHovering = hovering
+                
+                if hovering {
+                    // Micro bounce animation on hover enter
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.5)) {
+                        hoverScale = 1.03
+                        hoverOffset = -2
+                        hoverGlow = 1.0
+                    }
+                    
+                    // Settle to subtle hover state
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            hoverScale = 1.02
+                            hoverOffset = -1
+                        }
+                    }
+                } else {
+                    // Smooth return to normal
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        hoverScale = 1.0
+                        hoverOffset = 0
+                        hoverGlow = 0
+                    }
+                }
+            }
+    }
+}
+
+/// Secondary button style with subtle hover effect
+private struct SecondaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        SecondaryButtonContent(configuration: configuration)
+    }
+}
+
+private struct SecondaryButtonContent: View {
+    let configuration: ButtonStyleConfiguration
+    
+    @State private var isHovering = false
+    
+    var body: some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : (isHovering ? 1.02 : 1.0))
+            .opacity(configuration.isPressed ? 0.7 : 1.0)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(white: 0.5).opacity(isHovering ? 0.08 : 0))
+                    .animation(.easeInOut(duration: 0.2), value: isHovering)
+            )
             .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isHovering)
+            .onHover { hovering in
+                isHovering = hovering
+            }
     }
 }
 
