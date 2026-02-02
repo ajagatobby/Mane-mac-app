@@ -261,8 +261,8 @@ struct OverlayView: View {
         case .chat:
             showChatView = true
             searchMode = .chat
-        case .commands:
-            executeCommand(item)
+        case .tools:
+            executeTool(item)
         default:
             openItem(item)
         }
@@ -385,10 +385,10 @@ struct OverlayView: View {
                 // Chat mode doesn't show search results
                 break
                 
-            case .command:
-                let commands = searchCommands(query: query)
-                if !commands.isEmpty {
-                    sections.append(ResultSection(category: .commands, items: commands))
+            case .tools:
+                let toolResults = searchTools(query: query)
+                if !toolResults.isEmpty {
+                    sections.append(ResultSection(category: .tools, items: toolResults))
                 }
             }
             
@@ -448,39 +448,39 @@ struct OverlayView: View {
         }
     }
     
-    private func searchCommands(query: String) -> [ResultItem] {
-        let commands = [
+    private func searchTools(query: String) -> [ResultItem] {
+        let toolItems = [
             ResultItem(
-                title: "Start Chat",
-                subtitle: "Open AI chat interface",
-                icon: "bubble.left.and.bubble.right",
-                iconColor: ManeTheme.Colors.categoryChat,
-                category: .commands
+                title: "Summarize",
+                subtitle: "Condense text or documents",
+                icon: "text.alignleft",
+                iconColor: Color(red: 0.95, green: 0.4, blue: 0.5),
+                category: .tools
             ),
             ResultItem(
-                title: "Import Files",
-                subtitle: "Add files to knowledge base",
-                icon: "square.and.arrow.down",
-                iconColor: ManeTheme.Colors.accentPrimary,
-                category: .commands
+                title: "Transcribe",
+                subtitle: "Convert audio to text",
+                icon: "waveform",
+                iconColor: Color(red: 0.55, green: 0.45, blue: 0.95),
+                category: .tools
             ),
             ResultItem(
-                title: "Check Health",
-                subtitle: "Verify backend connection",
-                icon: "heart.fill",
-                iconColor: ManeTheme.Colors.statusSuccess,
-                category: .commands
+                title: "Write",
+                subtitle: "Generate text content",
+                icon: "pencil.line",
+                iconColor: Color(red: 0.4, green: 0.75, blue: 0.55),
+                category: .tools
             ),
             ResultItem(
-                title: "Settings",
-                subtitle: "Configure Mane-paw",
-                icon: "gear",
-                iconColor: ManeTheme.Colors.categorySettings,
-                category: .commands
+                title: "Colour Picker",
+                subtitle: "Pick any color",
+                icon: "eyedropper.full",
+                iconColor: Color(red: 0.95, green: 0.65, blue: 0.3),
+                category: .tools
             ),
         ]
         
-        return commands.filter {
+        return toolItems.filter {
             $0.title.localizedCaseInsensitiveContains(query) ||
             ($0.subtitle?.localizedCaseInsensitiveContains(query) ?? false)
         }
@@ -551,16 +551,22 @@ struct OverlayView: View {
         // Delete item
     }
     
-    private func executeCommand(_ item: ResultItem) {
+    private func executeTool(_ item: ResultItem) {
         switch item.title {
-        case "Start Chat":
+        case "Summarize":
             showChatView = true
             searchMode = .chat
-        case "Import Files":
-            handleAction("import")
-        case "Settings":
-            // Open settings
-            break
+            searchQuery = "Summarize: "
+        case "Transcribe":
+            showChatView = true
+            searchMode = .chat
+            searchQuery = "Transcribe: "
+        case "Write":
+            showChatView = true
+            searchMode = .chat
+            searchQuery = "Write: "
+        case "Colour Picker":
+            NSColorPanel.shared.makeKeyAndOrderFront(nil)
         default:
             break
         }

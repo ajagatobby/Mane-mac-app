@@ -44,7 +44,7 @@ enum ResultCategory: String, CaseIterable {
     case documents = "Documents"
     case projects = "Projects"
     case chat = "Chat"
-    case commands = "Commands"
+    case tools = "Tools"
     case recent = "Recent"
     case general = "Results"
     
@@ -53,7 +53,7 @@ enum ResultCategory: String, CaseIterable {
         case .documents: return "doc.text.fill"
         case .projects: return "folder.fill"
         case .chat: return "bubble.left.and.bubble.right.fill"
-        case .commands: return "command"
+        case .tools: return "wrench.and.screwdriver.fill"
         case .recent: return "clock.fill"
         case .general: return "magnifyingglass"
         }
@@ -64,7 +64,7 @@ enum ResultCategory: String, CaseIterable {
         case .documents: return ManeTheme.Colors.categoryDocument
         case .projects: return ManeTheme.Colors.categoryProject
         case .chat: return ManeTheme.Colors.categoryChat
-        case .commands: return ManeTheme.Colors.accentPrimary
+        case .tools: return ManeTheme.Colors.accentPrimary
         case .recent: return ManeTheme.Colors.textSecondary
         case .general: return ManeTheme.Colors.textSecondary
         }
@@ -401,20 +401,20 @@ extension Array {
                     category: .projects
                 ),
             ]),
-            ResultSection(category: .commands, items: [
+            ResultSection(category: .tools, items: [
                 ResultItem(
                     title: "Start Chat",
                     subtitle: "Open AI chat interface",
                     icon: "bubble.left.and.bubble.right",
                     iconColor: ManeTheme.Colors.categoryChat,
-                    category: .commands
+                    category: .tools
                 ),
                 ResultItem(
                     title: "Import Files",
                     subtitle: "Add files to knowledge base",
                     icon: "square.and.arrow.down",
                     iconColor: ManeTheme.Colors.accentPrimary,
-                    category: .commands
+                    category: .tools
                 ),
             ]),
         ]

@@ -15,7 +15,7 @@ enum SearchMode: Hashable {
     case chat        // AI chat mode
     case documents   // Search documents
     case projects    // Search projects
-    case command     // Command palette
+    case tools       // Tools palette
     
     var icon: String {
         switch self {
@@ -23,7 +23,7 @@ enum SearchMode: Hashable {
         case .chat: return "bubble.left.and.bubble.right"
         case .documents: return "doc.text"
         case .projects: return "folder"
-        case .command: return "command"
+        case .tools: return "wrench.and.screwdriver"
         }
     }
     
@@ -33,7 +33,7 @@ enum SearchMode: Hashable {
         case .chat: return ManeTheme.Colors.accentPurple
         case .documents: return ManeTheme.Colors.categoryDocument
         case .projects: return ManeTheme.Colors.categoryProject
-        case .command: return ManeTheme.Colors.accentPrimary
+        case .tools: return ManeTheme.Colors.accentPrimary
         }
     }
     
@@ -43,7 +43,7 @@ enum SearchMode: Hashable {
         case .chat: return "Ask Mane-paw anything..."
         case .documents: return "Search documents..."
         case .projects: return "Search projects..."
-        case .command: return "Type a command..."
+        case .tools: return "Search tools..."
         }
     }
     
@@ -53,7 +53,7 @@ enum SearchMode: Hashable {
         case .chat: return "⌘⇧C"
         case .documents: return "⌘⇧D"
         case .projects: return "⌘⇧P"
-        case .command: return "⌘⇧K"
+        case .tools: return "⌘⇧T"
         }
     }
 }
@@ -156,7 +156,7 @@ struct SearchBar: View {
     // MARK: - Mode Cycling
     
     private func cycleModes() {
-        let modes: [SearchMode] = [.search, .chat, .documents, .projects, .command]
+        let modes: [SearchMode] = [.search, .chat, .documents, .projects, .tools]
         if let currentIndex = modes.firstIndex(of: mode) {
             let nextIndex = (currentIndex + 1) % modes.count
             let newMode = modes[nextIndex]
@@ -306,7 +306,7 @@ struct SimpleSearchBar: View {
                 .padding(.horizontal)
                 
                 // Different modes
-                ForEach([SearchMode.search, .chat, .documents, .projects, .command], id: \.self) { previewMode in
+                ForEach([SearchMode.search, .chat, .documents, .projects, .tools], id: \.self) { previewMode in
                     SearchBar(
                         text: .constant(""),
                         mode: .constant(previewMode),

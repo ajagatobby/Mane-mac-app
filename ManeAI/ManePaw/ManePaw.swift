@@ -283,12 +283,38 @@ struct RaycastPanelContent: View {
         ("Projects", "Browse codebases", "folder.fill", Color(red: 0.98, green: 0.6, blue: 0.2), "projects")
     ]
     
-    // Commands data - essential utility tools
-    private let commands: [(title: String, subtitle: String, icon: String, color: Color, id: String)] = [
-        ("Calculator", "Quick math", "plus.forwardslash.minus", Color(red: 0.35, green: 0.35, blue: 0.38), "calculator"),
-        ("Clipboard History", "Recent copies", "doc.on.clipboard", Color(red: 0.55, green: 0.36, blue: 0.85), "clipboard"),
-        ("Color Picker", "Pick any color", "eyedropper", Color(red: 0.3, green: 0.75, blue: 0.45), "colorpicker")
+    // Tools data - AI-powered utility tools
+    private let tools: [(title: String, subtitle: String, icon: String, color: Color, id: String)] = [
+        ("Summarize", "Condense text or documents", "text.alignleft", Color(red: 0.95, green: 0.4, blue: 0.5), "summarize"),
+        ("Transcribe", "Convert audio to text", "waveform", Color(red: 0.55, green: 0.45, blue: 0.95), "transcribe"),
+        ("Write", "Generate text content", "pencil.line", Color(red: 0.4, green: 0.75, blue: 0.55), "write"),
+        ("Colour Picker", "Pick any color", "eyedropper.full", Color(red: 0.95, green: 0.65, blue: 0.3), "colorpicker")
     ]
+    
+    // Tool prefixes for highlighting
+    private let toolPrefixes: [(prefix: String, icon: String, gradientColors: [Color])] = [
+        ("Summarize:", "text.alignleft", [Color(red: 0.95, green: 0.35, blue: 0.45), Color(red: 0.85, green: 0.25, blue: 0.4)]),
+        ("Transcribe:", "waveform", [Color(red: 0.55, green: 0.4, blue: 0.95), Color(red: 0.45, green: 0.3, blue: 0.85)]),
+        ("Write:", "pencil.line", [Color(red: 0.35, green: 0.75, blue: 0.5), Color(red: 0.25, green: 0.65, blue: 0.4)])
+    ]
+    
+    // Detect active tool prefix
+    private var activeToolPrefix: (prefix: String, icon: String, gradientColors: [Color])? {
+        for tool in toolPrefixes {
+            if searchQuery.hasPrefix(tool.prefix) {
+                return tool
+            }
+        }
+        return nil
+    }
+    
+    // Query without the tool prefix
+    private var queryWithoutPrefix: String {
+        if let tool = activeToolPrefix {
+            return String(searchQuery.dropFirst(tool.prefix.count)).trimmingCharacters(in: .whitespaces)
+        }
+        return searchQuery
+    }
     
     // Total selectable items
     private var totalItems: Int {
@@ -297,7 +323,7 @@ struct RaycastPanelContent: View {
             // +1 for the "Ask AI" row at the top
             return results.flatMap { $0.items }.count + 1
         }
-        return quickActions.count + commands.count
+        return quickActions.count + tools.count
     }
     
     // Dynamic height based on current state
@@ -432,22 +458,80 @@ struct RaycastPanelContent: View {
             .buttonStyle(.plain)
             .help("Switch mode (Tab)")
             
-            // Text field with custom placeholder
-            ZStack(alignment: .leading) {
-                // Custom placeholder with better contrast
-                if searchQuery.isEmpty {
-                    Text(placeholderText)
-                        .font(.system(size: 17, weight: .regular))
-                        .foregroundStyle(Color(white: 0.5))
+            // Text field with tool prefix badge
+            HStack(spacing: 8) {
+                // Tool prefix badge (if active)
+                if let tool = activeToolPrefix {
+                    HStack(spacing: 5) {
+                        Image(systemName: tool.icon)
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(String(tool.prefix.dropLast()))
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background {
+                        ZStack {
+                            // Gradient background
+                            LinearGradient(
+                                colors: tool.gradientColors,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                            
+                            // Noise overlay - subtle grain texture
+                            Canvas { context, size in
+                                for _ in 0..<400 {
+                                    let x = CGFloat.random(in: 0..<size.width)
+                                    let y = CGFloat.random(in: 0..<size.height)
+                                    let dotSize = CGFloat.random(in: 1...1.5)
+                                    context.fill(
+                                        Path(ellipseIn: CGRect(x: x, y: y, width: dotSize, height: dotSize)),
+                                        with: .color(.white.opacity(Double.random(in: 0.1...0.22)))
+                                    )
+                                }
+                            }
+                            .blendMode(.overlay)
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .shadow(color: tool.gradientColors[0].opacity(0.3), radius: 4, y: 2)
                 }
                 
-                // Actual text field
-                TextField("", text: $searchQuery)
-                    .font(.system(size: 17, weight: .regular))
-                    .textFieldStyle(.plain)
-                    .foregroundStyle(Color(white: 0.0))
-                    .focused($focused)
-                    .onSubmit { submit() }
+                // Text field with custom placeholder
+                ZStack(alignment: .leading) {
+                    // Custom placeholder with better contrast
+                    if searchQuery.isEmpty || (activeToolPrefix != nil && queryWithoutPrefix.isEmpty) {
+                        Text(activeToolPrefix != nil ? "Enter your content..." : placeholderText)
+                            .font(.system(size: 17, weight: .regular))
+                            .foregroundStyle(Color(white: 0.5))
+                    }
+                    
+                    // Actual text field (show only the part after prefix if tool is active)
+                    if activeToolPrefix != nil {
+                        TextField("", text: Binding(
+                            get: { queryWithoutPrefix },
+                            set: { newValue in
+                                if let tool = activeToolPrefix {
+                                    searchQuery = tool.prefix + (newValue.isEmpty ? "" : " " + newValue)
+                                }
+                            }
+                        ))
+                        .font(.system(size: 17, weight: .regular))
+                        .textFieldStyle(.plain)
+                        .foregroundStyle(Color(white: 0.0))
+                        .focused($focused)
+                        .onSubmit { submit() }
+                    } else {
+                        TextField("", text: $searchQuery)
+                            .font(.system(size: 17, weight: .regular))
+                            .textFieldStyle(.plain)
+                            .foregroundStyle(Color(white: 0.0))
+                            .focused($focused)
+                            .onSubmit { submit() }
+                    }
+                }
             }
             
             Spacer()
@@ -491,7 +575,7 @@ struct RaycastPanelContent: View {
         case .chat: return "sparkles"
         case .documents: return "doc.fill"
         case .projects: return "folder.fill"
-        case .command: return "terminal"
+        case .tools: return "wrench.and.screwdriver.fill"
         }
     }
     
@@ -501,7 +585,7 @@ struct RaycastPanelContent: View {
         case .chat: return "Chat"
         case .documents: return "Docs"
         case .projects: return "Projects"
-        case .command: return "Commands"
+        case .tools: return "Tools"
         }
     }
     
@@ -511,7 +595,7 @@ struct RaycastPanelContent: View {
         case .chat: return Color(red: 0.95, green: 0.3, blue: 0.35)
         case .documents: return Color(red: 1.0, green: 0.78, blue: 0.28)
         case .projects: return Color(red: 0.98, green: 0.6, blue: 0.2)
-        case .command: return Color(red: 0.5, green: 0.5, blue: 0.55)
+        case .tools: return Color(red: 0.95, green: 0.4, blue: 0.5)
         }
     }
     
@@ -521,7 +605,7 @@ struct RaycastPanelContent: View {
         case .chat: return "Ask Mane-paw anything..."
         case .documents: return "Search documents..."
         case .projects: return "Search projects..."
-        case .command: return "Type a command..."
+        case .tools: return "Search tools..."
         }
     }
     
@@ -586,24 +670,24 @@ struct RaycastPanelContent: View {
                 }
                 
                 // Commands section
-                Text("Commands")
+                Text("Tools")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color(white: 0.4))
                     .padding(.horizontal, 24)
                     .padding(.top, 14)
                     .padding(.bottom, 6)
                 
-                // Command items
-                ForEach(Array(commands.enumerated()), id: \.element.id) { index, command in
+                // Tool items
+                ForEach(Array(tools.enumerated()), id: \.element.id) { index, tool in
                     RaycastRow(
-                        icon: command.icon,
-                        iconColor: command.color,
-                        title: command.title,
-                        subtitle: command.subtitle,
-                        accessoryText: "Command",
+                        icon: tool.icon,
+                        iconColor: tool.color,
+                        title: tool.title,
+                        subtitle: tool.subtitle,
+                        accessoryText: "Tool",
                         isSelected: selectedIndex == quickActions.count + index
                     ) {
-                        handleCommand(command.id)
+                        handleTool(tool.id)
                     }
                 }
             }
@@ -611,23 +695,30 @@ struct RaycastPanelContent: View {
         }
     }
     
-    private func handleCommand(_ id: String) {
+    private func handleTool(_ id: String) {
         switch id {
-        case "calculator":
-            // Open Calculator app
-            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.calculator") {
-                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
-            }
-        case "clipboard":
-            // Show clipboard history (placeholder - future feature)
-            print("Clipboard history")
+        case "summarize":
+            // Switch to chat mode with summarize prompt
+            searchMode = .chat
+            showChat = true
+            searchQuery = "Summarize: "
+        case "transcribe":
+            // Switch to chat mode with transcribe prompt
+            searchMode = .chat
+            showChat = true
+            searchQuery = "Transcribe: "
+        case "write":
+            // Switch to chat mode with write prompt
+            searchMode = .chat
+            showChat = true
+            searchQuery = "Write: "
         case "colorpicker":
             // Open color picker
             NSColorPanel.shared.makeKeyAndOrderFront(nil)
+            onDismiss()
         default:
             break
         }
-        onDismiss()
     }
     
     private var noResultsView: some View {
@@ -721,9 +812,14 @@ struct RaycastPanelContent: View {
             // Chat header
             HStack {
                 Button { 
-                    withAnimation(.easeOut(duration: 0.2)) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
                         showChat = false
                         chatMessages = []
+                        searchQuery = ""
+                        searchMode = .search
+                        results = []
+                        streamingContent = ""
+                        isStreaming = false
                     }
                 } label: {
                     HStack(spacing: 4) {
@@ -754,46 +850,64 @@ struct RaycastPanelContent: View {
             .background(Color(white: 0.91))
             
             // Messages
-            ScrollViewReader { proxy in
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 12) {
-                        if chatMessages.isEmpty && !isStreaming {
-                            VStack(spacing: 8) {
-                                Image(systemName: "bubble.left.and.bubble.right")
-                                    .font(.system(size: 32, weight: .light))
-                                    .foregroundStyle(Color(white: 0.65))
-                                Text("Ask anything about your documents")
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(Color(white: 0.45))
+            ZStack(alignment: .bottom) {
+                ScrollViewReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        LazyVStack(spacing: 12) {
+                            if chatMessages.isEmpty && !isStreaming {
+                                VStack(spacing: 8) {
+                                    Image(systemName: "bubble.left.and.bubble.right")
+                                        .font(.system(size: 32, weight: .light))
+                                        .foregroundStyle(Color(white: 0.65))
+                                    Text("Ask anything about your documents")
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(Color(white: 0.45))
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .frame(height: 220)
                             }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .frame(height: 220)
+                            
+                            ForEach(chatMessages) { msg in
+                                ChatBubble(message: msg)
+                            }
+                            
+                            // Streaming message
+                            if isStreaming {
+                                StreamingChatBubble(content: streamingContent)
+                                    .id("streaming")
+                            }
+                            
+                            // Bottom padding for fade mask
+                            Color.clear.frame(height: 24)
                         }
-                        
-                        ForEach(chatMessages) { msg in
-                            ChatBubble(message: msg)
-                        }
-                        
-                        // Streaming message
-                        if isStreaming {
-                            StreamingChatBubble(content: streamingContent)
-                                .id("streaming")
-                        }
+                        .padding(16)
                     }
-                    .padding(16)
-                }
-                .onChange(of: streamingContent) { _, _ in
-                    withAnimation(.easeOut(duration: 0.1)) {
-                        proxy.scrollTo("streaming", anchor: .bottom)
-                    }
-                }
-                .onChange(of: chatMessages.count) { _, _ in
-                    if let last = chatMessages.last {
+                    .onChange(of: streamingContent) { _, _ in
                         withAnimation(.easeOut(duration: 0.1)) {
-                            proxy.scrollTo(last.id, anchor: .bottom)
+                            proxy.scrollTo("streaming", anchor: .bottom)
+                        }
+                    }
+                    .onChange(of: chatMessages.count) { _, _ in
+                        if let last = chatMessages.last {
+                            withAnimation(.easeOut(duration: 0.1)) {
+                                proxy.scrollTo(last.id, anchor: .bottom)
+                            }
                         }
                     }
                 }
+                
+                // Bottom fade mask
+                LinearGradient(
+                    stops: [
+                        .init(color: Color(white: 0.95).opacity(0), location: 0),
+                        .init(color: Color(white: 0.95).opacity(0.8), location: 0.5),
+                        .init(color: Color(white: 0.95), location: 1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 40)
+                .allowsHitTesting(false)
             }
             
             // Input hint
@@ -927,13 +1041,13 @@ struct RaycastPanelContent: View {
         }
         
         if results.isEmpty && searchQuery.isEmpty {
-            // Quick actions + commands
+            // Quick actions + tools
             if selectedIndex < quickActions.count {
                 handleQuickAction(quickActions[selectedIndex].id)
             } else {
-                let commandIndex = selectedIndex - quickActions.count
-                if commandIndex < commands.count {
-                    handleCommand(commands[commandIndex].id)
+                let toolIndex = selectedIndex - quickActions.count
+                if toolIndex < tools.count {
+                    handleTool(tools[toolIndex].id)
                 }
             }
         } else if results.isEmpty && !searchQuery.isEmpty {
@@ -955,8 +1069,8 @@ struct RaycastPanelContent: View {
                         openFile(item)
                     case .projects:
                         openProject(item)
-                    case .commands:
-                        handleResultCommand(item)
+                    case .tools:
+                        handleResultTool(item)
                     default:
                         openFile(item)
                     }
@@ -972,12 +1086,12 @@ struct RaycastPanelContent: View {
         onDismiss()
     }
     
-    private func handleResultCommand(_ item: ResultItem) {
-        handleCommand(item.id)
+    private func handleResultTool(_ item: ResultItem) {
+        handleTool(item.id)
     }
     
     private func cycleMode() {
-        let modes: [SearchMode] = [.search, .documents, .projects, .chat, .command]
+        let modes: [SearchMode] = [.search, .documents, .projects, .chat, .tools]
         if let i = modes.firstIndex(of: searchMode) {
             let nextMode = modes[(i + 1) % modes.count]
             searchMode = nextMode
@@ -1090,24 +1204,24 @@ struct RaycastPanelContent: View {
                         isSearching = false
                     }
                     
-                case .command:
-                    // Filter commands locally
-                    let filtered = commands.filter {
+                case .tools:
+                    // Filter tools locally
+                    let filtered = tools.filter {
                         $0.title.localizedCaseInsensitiveContains(query) ||
                         $0.subtitle.localizedCaseInsensitiveContains(query)
                     }
-                    let items = filtered.map { cmd in
+                    let items = filtered.map { tool in
                         ResultItem(
-                            id: cmd.id,
-                            title: cmd.title,
-                            subtitle: cmd.subtitle,
-                            icon: cmd.icon,
-                            iconColor: cmd.color,
-                            category: .commands
+                            id: tool.id,
+                            title: tool.title,
+                            subtitle: tool.subtitle,
+                            icon: tool.icon,
+                            iconColor: tool.color,
+                            category: .tools
                         )
                     }
                     await MainActor.run {
-                        results = items.isEmpty ? [] : [ResultSection(category: .commands, items: items)]
+                        results = items.isEmpty ? [] : [ResultSection(category: .tools, items: items)]
                         isSearching = false
                         selectedIndex = 0
                     }

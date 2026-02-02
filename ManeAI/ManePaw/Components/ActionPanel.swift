@@ -342,7 +342,7 @@ struct ContextualActionPanel: View {
                 onAction("reindex")
             })
             
-        case .command, .search:
+        case .tools, .search:
             break
         }
         
