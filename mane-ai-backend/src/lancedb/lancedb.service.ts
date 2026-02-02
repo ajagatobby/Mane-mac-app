@@ -262,7 +262,7 @@ export class LanceDBService implements OnModuleInit {
     if (vector && vector.length !== this.TEXT_DIMENSION) {
       throw new Error(
         `Vector dimension mismatch: expected ${this.TEXT_DIMENSION}, got ${vector.length}. ` +
-        `Text table requires MiniLM embeddings (384-dim).`
+          `Text table requires MiniLM embeddings (384-dim).`,
       );
     }
 
@@ -271,7 +271,7 @@ export class LanceDBService implements OnModuleInit {
 
     // Extract mediaType from metadata (for audio) or default to 'text'
     const mediaType = (metadata.mediaType as string) || 'text';
-    
+
     // Remove mediaType from metadata to avoid duplication
     const { mediaType: _, ...cleanMetadata } = metadata;
 
@@ -290,7 +290,9 @@ export class LanceDBService implements OnModuleInit {
     };
 
     await this.textTable.add([record]);
-    this.logger.log(`${mediaType.charAt(0).toUpperCase() + mediaType.slice(1)} document added: ${id} (${fileName})`);
+    this.logger.log(
+      `${mediaType.charAt(0).toUpperCase() + mediaType.slice(1)} document added: ${id} (${fileName})`,
+    );
 
     return id;
   }
@@ -317,10 +319,10 @@ export class LanceDBService implements OnModuleInit {
     }
 
     const queryVector = await this.generateEmbedding(query);
-    
+
     // If limit is 0, return all results (use a very high number)
     const effectiveLimit = limit <= 0 ? 10000 : limit;
-    
+
     const results = await this.textTable
       .vectorSearch(queryVector)
       .limit(effectiveLimit)
@@ -351,14 +353,20 @@ export class LanceDBService implements OnModuleInit {
    * @param limit - Maximum number of results. Use 0 to return all results.
    * @param documentIds - Optional array of document IDs to filter to
    */
-  async hybridSearch(query: string, limit: number = 5, documentIds?: string[]): Promise<SearchResult[]> {
+  async hybridSearch(
+    query: string,
+    limit: number = 5,
+    documentIds?: string[],
+  ): Promise<SearchResult[]> {
     if (!this.textTable) {
       throw new Error('Text table not initialized');
     }
 
     // If documentIds are provided, fetch those specific documents (and all chunks for same file)
     if (documentIds && documentIds.length > 0) {
-      this.logger.log(`Filtering search to ${documentIds.length} specific document(s)`);
+      this.logger.log(
+        `Filtering search to ${documentIds.length} specific document(s)`,
+      );
       const expandedIds = new Set<string>();
       const allDocs = await this.textTable.query().limit(10000).toArray();
       const allRows = allDocs as any[];
@@ -396,7 +404,7 @@ export class LanceDBService implements OnModuleInit {
     // If limit is 0, we want all results
     const returnAll = limit <= 0;
     const searchLimit = returnAll ? 0 : limit * 2;
-    
+
     // Run vector search
     const vectorResults = await this.searchText(query, searchLimit);
 
@@ -435,7 +443,7 @@ export class LanceDBService implements OnModuleInit {
     });
 
     const sortedResults = scoredResults.sort((a, b) => b.score - a.score);
-    
+
     // Return all results if limit is 0, otherwise slice to limit
     return returnAll ? sortedResults : sortedResults.slice(0, limit);
   }
@@ -567,7 +575,7 @@ export class LanceDBService implements OnModuleInit {
     }
 
     const id = this.generateProjectId();
-    
+
     // Generate embedding from description + tech stack + tags
     const embeddingText = `${name} ${description} ${techStack.join(' ')} ${tags.join(' ')}`;
     const vector = await this.generateEmbedding(embeddingText);
@@ -648,7 +656,9 @@ export class LanceDBService implements OnModuleInit {
   /**
    * Get project by path
    */
-  async getProjectByPath(projectPath: string): Promise<ProjectSearchResult | null> {
+  async getProjectByPath(
+    projectPath: string,
+  ): Promise<ProjectSearchResult | null> {
     if (!this.projectsTable) {
       return null;
     }
@@ -680,7 +690,10 @@ export class LanceDBService implements OnModuleInit {
   /**
    * Search projects by query (hybrid search)
    */
-  async searchProjects(query: string, limit: number = 10): Promise<ProjectSearchResult[]> {
+  async searchProjects(
+    query: string,
+    limit: number = 10,
+  ): Promise<ProjectSearchResult[]> {
     if (!this.projectsTable) {
       return [];
     }
@@ -692,7 +705,10 @@ export class LanceDBService implements OnModuleInit {
       .toArray();
 
     // Extract keywords for boosting
-    const keywords = query.toLowerCase().split(/\s+/).filter((k) => k.length > 2);
+    const keywords = query
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((k) => k.length > 2);
 
     const scoredResults = results.map((row: any) => {
       let keywordScore = 0;
@@ -705,9 +721,11 @@ export class LanceDBService implements OnModuleInit {
         // Name matches are most valuable
         if (nameLower.includes(keyword)) keywordScore += 0.3;
         // Tech stack exact matches
-        if (techStack.some((t: string) => t.toLowerCase() === keyword)) keywordScore += 0.4;
+        if (techStack.some((t: string) => t.toLowerCase() === keyword))
+          keywordScore += 0.4;
         // Tag matches
-        if (tags.some((t: string) => t.toLowerCase().includes(keyword))) keywordScore += 0.3;
+        if (tags.some((t: string) => t.toLowerCase().includes(keyword)))
+          keywordScore += 0.3;
         // Description matches
         if (descLower.includes(keyword)) keywordScore += 0.1;
       }
@@ -845,7 +863,9 @@ export class LanceDBService implements OnModuleInit {
 
     let filteredResults = results;
     if (projectId) {
-      filteredResults = results.filter((row: any) => row.projectId === projectId);
+      filteredResults = results.filter(
+        (row: any) => row.projectId === projectId,
+      );
     }
 
     return filteredResults.slice(0, limit).map((row: any) => ({
@@ -862,7 +882,9 @@ export class LanceDBService implements OnModuleInit {
   /**
    * Get skeletons for a project
    */
-  async getSkeletonsByProject(projectId: string): Promise<SkeletonSearchResult[]> {
+  async getSkeletonsByProject(
+    projectId: string,
+  ): Promise<SkeletonSearchResult[]> {
     if (!this.skeletonsTable) {
       return [];
     }
@@ -893,7 +915,9 @@ export class LanceDBService implements OnModuleInit {
         await this.skeletonsTable.delete(`projectId = "${projectId}"`);
         this.logger.log(`Deleted skeletons for project: ${projectId}`);
       } catch (e) {
-        this.logger.warn(`Failed to delete skeletons for project ${projectId}: ${e}`);
+        this.logger.warn(
+          `Failed to delete skeletons for project ${projectId}: ${e}`,
+        );
       }
     }
   }

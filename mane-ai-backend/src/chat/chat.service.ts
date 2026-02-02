@@ -24,7 +24,19 @@ export class ChatService {
 
   async *chatStream(
     dto: ChatQueryDto,
-  ): AsyncGenerator<{ content: string; done: boolean; sources?: Array<{ fileName: string; filePath: string; mediaType: string }> }, void, unknown> {
+  ): AsyncGenerator<
+    {
+      content: string;
+      done: boolean;
+      sources?: Array<{
+        fileName: string;
+        filePath: string;
+        mediaType: string;
+      }>;
+    },
+    void,
+    unknown
+  > {
     this.logger.log(
       `Processing streaming chat query: ${dto.query.substring(0, 50)}...`,
     );
@@ -38,14 +50,11 @@ export class ChatService {
     this.logger.log(
       `Processing search query: ${dto.query.substring(0, 50)}...`,
     );
-    
+
     // Use limit from DTO, default to 5. A value of 0 means return all results.
     const limit = dto.limit === undefined ? 5 : dto.limit;
-    
-    const results = await this.lanceDBService.hybridSearch(
-      dto.query,
-      limit,
-    );
+
+    const results = await this.lanceDBService.hybridSearch(dto.query, limit);
 
     return {
       results: results.map((r) => ({

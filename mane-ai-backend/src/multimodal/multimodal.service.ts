@@ -257,9 +257,14 @@ export class MultimodalService implements OnModuleInit {
         `Audio loaded: ${audioData.length} samples (${durationSec}s)`,
       );
 
-      // Pass raw audio data to Whisper (not file path)
+      // Pass raw audio data to Whisper with chunking for long audio
+      // chunk_length_s: Process audio in 30-second chunks
+      // stride_length_s: Overlap chunks by 5 seconds for better continuity
       const result = (await pipe(audioData, {
         sampling_rate: 16000,
+        chunk_length_s: 30,
+        stride_length_s: 5,
+        return_timestamps: false,
       })) as TranscriptionResult;
 
       const transcript = result.text?.trim() || '';

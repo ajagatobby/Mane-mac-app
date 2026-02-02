@@ -82,21 +82,25 @@ export class IngestService {
       if (mediaType === 'text') {
         // Text document - use content if provided, otherwise read from file
         let content = dto.content;
-        
+
         if (!content && fs.existsSync(dto.filePath)) {
           const ext = path.extname(dto.filePath).toLowerCase();
-          
+
           if (ext === '.pdf') {
             // Extract text from PDF
             const parser = new PDFParse({ url: dto.filePath });
             const pdfData = await parser.getText();
             content = pdfData.text;
-            this.logger.log(`Extracted ${content.length} chars from PDF: ${fileName}`);
+            this.logger.log(
+              `Extracted ${content.length} chars from PDF: ${fileName}`,
+            );
           } else if (ext === '.docx') {
             // Extract text from Word (.docx)
             const result = await mammoth.extractRawText({ path: dto.filePath });
             content = result.value;
-            this.logger.log(`Extracted ${content.length} chars from DOCX: ${fileName}`);
+            this.logger.log(
+              `Extracted ${content.length} chars from DOCX: ${fileName}`,
+            );
           } else if (ext === '.xlsx' || ext === '.xls') {
             // Extract text from Excel
             const workbook = XLSX.readFile(dto.filePath);
@@ -107,7 +111,9 @@ export class IngestService {
               sheets.push(`[Sheet: ${sheetName}]\n${csv}`);
             }
             content = sheets.join('\n\n');
-            this.logger.log(`Extracted ${content.length} chars from Excel: ${fileName}`);
+            this.logger.log(
+              `Extracted ${content.length} chars from Excel: ${fileName}`,
+            );
           } else if (ext === '.pptx') {
             // PowerPoint - extract as XML text (basic)
             const dataBuffer = await fs.promises.readFile(dto.filePath);
@@ -126,18 +132,33 @@ export class IngestService {
           throw new Error('Content is required for text documents');
         }
 
-        const ext = path.extname(dto.filePath).toLowerCase().replace('.', '') || 'text';
-        const docType = ext === 'pdf' ? 'pdf' : ext === 'docx' ? 'word' : ext === 'xlsx' || ext === 'xls' ? 'spreadsheet' : 'text';
+        const ext =
+          path.extname(dto.filePath).toLowerCase().replace('.', '') || 'text';
+        const docType =
+          ext === 'pdf'
+            ? 'pdf'
+            : ext === 'docx'
+              ? 'word'
+              : ext === 'xlsx' || ext === 'xls'
+                ? 'spreadsheet'
+                : 'text';
 
         const shouldChunk = content.length >= MIN_CONTENT_FOR_CHUNKING;
         const chunks = shouldChunk ? this.chunkText(content) : [content];
 
         const ids: string[] = [];
         for (let i = 0; i < chunks.length; i++) {
-          const chunkContent = this.enrichContent(chunks[i], dto.filePath, docType);
+          const chunkContent = this.enrichContent(
+            chunks[i],
+            dto.filePath,
+            docType,
+          );
           const chunkMetadata = {
             ...dto.metadata,
-            ...(chunks.length > 1 && { chunkIndex: i, totalChunks: chunks.length }),
+            ...(chunks.length > 1 && {
+              chunkIndex: i,
+              totalChunks: chunks.length,
+            }),
           };
           const chunkId = await this.lanceDBService.addTextDocument(
             chunkContent,
@@ -148,7 +169,9 @@ export class IngestService {
         }
         id = ids[0];
         if (chunks.length > 1) {
-          this.logger.log(`Indexed ${fileName} as ${chunks.length} chunks for better search`);
+          this.logger.log(
+            `Indexed ${fileName} as ${chunks.length} chunks for better search`,
+          );
         }
       } else if (mediaType === 'audio') {
         // Audio file - transcribe with Whisper, embed with MiniLM (384-dim)
@@ -157,7 +180,9 @@ export class IngestService {
           throw new Error(`File not found: ${dto.filePath}`);
         }
 
-        const processed = await this.multimodalService.processFile(dto.filePath);
+        const processed = await this.multimodalService.processFile(
+          dto.filePath,
+        );
         const enrichedContent = this.enrichContent(
           processed.content,
           dto.filePath,
@@ -187,11 +212,10 @@ export class IngestService {
         );
 
         // Store caption in text table (will be embedded with MiniLM)
-        id = await this.lanceDBService.addTextDocument(
-          caption,
-          dto.filePath,
-          { ...dto.metadata, mediaType: 'image' },
-        );
+        id = await this.lanceDBService.addTextDocument(caption, dto.filePath, {
+          ...dto.metadata,
+          mediaType: 'image',
+        });
       } else {
         throw new Error(`Unsupported media type: ${mediaType}`);
       }
@@ -275,7 +299,11 @@ export class IngestService {
    */
   async batchIngest(
     files: IngestDocumentDto[],
-  ): Promise<{ success: number; failed: number; results: IngestResponseDto[] }> {
+  ): Promise<{
+    success: number;
+    failed: number;
+    results: IngestResponseDto[];
+  }> {
     const results: IngestResponseDto[] = [];
     let success = 0;
     let failed = 0;
@@ -286,7 +314,9 @@ export class IngestService {
         results.push(result);
         success++;
       } catch (error: any) {
-        this.logger.error(`Failed to ingest ${file.filePath}: ${error.message}`);
+        this.logger.error(
+          `Failed to ingest ${file.filePath}: ${error.message}`,
+        );
         results.push({
           id: '',
           fileName: path.basename(file.filePath),

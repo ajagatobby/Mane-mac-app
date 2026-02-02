@@ -1,4 +1,10 @@
-import { IsString, IsOptional, IsArray, IsNumber, IsBoolean } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsArray,
+  IsNumber,
+  IsBoolean,
+} from 'class-validator';
 
 export class IndexProjectDto {
   @IsString()

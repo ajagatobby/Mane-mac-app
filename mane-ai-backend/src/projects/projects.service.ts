@@ -44,49 +44,69 @@ export class ProjectsService {
   async indexProject(dto: IndexProjectDto): Promise<IndexProjectResponseDto> {
     const startTime = Date.now();
     const quickMode = dto.quickMode !== false; // Default to quick mode
-    
+
     try {
-      this.logger.log(`Indexing project at: ${dto.folderPath} (quickMode: ${quickMode})`);
+      this.logger.log(
+        `Indexing project at: ${dto.folderPath} (quickMode: ${quickMode})`,
+      );
 
       // Step 1: Detect if it's a codebase
       const detection = this.codebaseAnalyzer.detectCodebase(dto.folderPath);
       if (!detection) {
         return {
           success: false,
-          message: 'No codebase detected in the specified folder. Looking for manifest files like package.json, Cargo.toml, etc.',
+          message:
+            'No codebase detected in the specified folder. Looking for manifest files like package.json, Cargo.toml, etc.',
         };
       }
 
       // Step 2: Check if project already exists
-      const existingProject = await this.lanceDBService.getProjectByPath(dto.folderPath);
+      const existingProject = await this.lanceDBService.getProjectByPath(
+        dto.folderPath,
+      );
       if (existingProject) {
         this.logger.log(`Re-indexing existing project: ${existingProject.id}`);
         await this.lanceDBService.deleteProject(existingProject.id);
       }
 
       // Step 3: Parse manifest
-      const manifest = this.codebaseAnalyzer.parseManifest(dto.folderPath, detection);
+      const manifest = this.codebaseAnalyzer.parseManifest(
+        dto.folderPath,
+        detection,
+      );
 
       // Step 4: Scan structure (limit depth for large projects)
       this.logger.log('Scanning codebase structure...');
       const structure = this.codebaseAnalyzer.scanStructure(dto.folderPath, 4); // Reduced depth
 
       // Step 5: Infer tech stack (fast operation)
-      const techStack = this.codebaseAnalyzer.inferTechStack(detection, manifest, structure);
+      const techStack = this.codebaseAnalyzer.inferTechStack(
+        detection,
+        manifest,
+        structure,
+      );
 
       // Step 6: Generate tags (fast operation)
-      const tags = this.codebaseAnalyzer.generateTags(detection, manifest, structure, techStack);
+      const tags = this.codebaseAnalyzer.generateTags(
+        detection,
+        manifest,
+        structure,
+        techStack,
+      );
 
       // Step 7: Determine project name
-      const projectName = dto.name || manifest?.name || path.basename(dto.folderPath);
+      const projectName =
+        dto.name || manifest?.name || path.basename(dto.folderPath);
 
       // Step 8: Generate knowledge document
       let knowledgeDocument: string;
-      
+
       if (quickMode) {
         // Fast mode with optional quick LLM summary
-        this.logger.log('Generating knowledge document (quick mode with LLM summary)...');
-        
+        this.logger.log(
+          'Generating knowledge document (quick mode with LLM summary)...',
+        );
+
         // Attempt quick LLM summary with timeout (won't block if slow)
         const quickSummary = await this.generateQuickLLMSummary(
           projectName,
@@ -95,7 +115,7 @@ export class ProjectsService {
           structure,
           techStack,
         );
-        
+
         knowledgeDocument = this.generateBasicKnowledgeDocument(
           projectName,
           detection.type,
@@ -106,8 +126,13 @@ export class ProjectsService {
         );
       } else {
         // Slow: Use full LLM analysis
-        this.logger.log('Generating knowledge document with LLM (this may take a moment)...');
-        const samples = this.codebaseAnalyzer.readSampleFiles(dto.folderPath, structure);
+        this.logger.log(
+          'Generating knowledge document with LLM (this may take a moment)...',
+        );
+        const samples = this.codebaseAnalyzer.readSampleFiles(
+          dto.folderPath,
+          structure,
+        );
         knowledgeDocument = await this.generateKnowledgeDocument(
           projectName,
           detection.type,
@@ -155,7 +180,9 @@ export class ProjectsService {
         createdAt: new Date().toISOString(),
       };
 
-      this.logger.log(`Project indexed successfully in ${elapsed}ms: ${projectId}`);
+      this.logger.log(
+        `Project indexed successfully in ${elapsed}ms: ${projectId}`,
+      );
 
       return {
         success: true,
@@ -174,7 +201,9 @@ export class ProjectsService {
   /**
    * Enhanced indexing with LLM analysis (slower but more detailed)
    */
-  async indexProjectWithAnalysis(dto: IndexProjectDto): Promise<IndexProjectResponseDto> {
+  async indexProjectWithAnalysis(
+    dto: IndexProjectDto,
+  ): Promise<IndexProjectResponseDto> {
     return this.indexProject({ ...dto, quickMode: false });
   }
 
@@ -306,7 +335,8 @@ export class ProjectsService {
         samples,
       );
 
-      const systemMessage = new SystemMessage(`You are an expert software architect analyzing a codebase.
+      const systemMessage =
+        new SystemMessage(`You are an expert software architect analyzing a codebase.
 Your task is to generate a concise knowledge document about the project.
 Focus on:
 1. What the project does (purpose)
@@ -320,14 +350,20 @@ Do NOT make up information - only report what you can infer from the provided co
 
       const humanMessage = new HumanMessage(prompt);
 
-      const response = await this.chatModel.invoke([systemMessage, humanMessage]);
-      const content = typeof response.content === 'string' 
-        ? response.content 
-        : JSON.stringify(response.content);
+      const response = await this.chatModel.invoke([
+        systemMessage,
+        humanMessage,
+      ]);
+      const content =
+        typeof response.content === 'string'
+          ? response.content
+          : JSON.stringify(response.content);
 
       return content;
     } catch (error: any) {
-      this.logger.warn(`LLM analysis failed, using basic template: ${error.message}`);
+      this.logger.warn(
+        `LLM analysis failed, using basic template: ${error.message}`,
+      );
       return this.generateBasicKnowledgeDocument(
         projectName,
         projectType,
@@ -354,11 +390,11 @@ Do NOT make up information - only report what you can infer from the provided co
     prompt += `- Total directories: ${structure.totalDirectories}\n`;
     prompt += `- Has tests: ${structure.hasTests}\n`;
     prompt += `- Has documentation: ${structure.hasDocumentation}\n`;
-    
+
     if (structure.keyDirectories.length > 0) {
       prompt += `- Key directories: ${structure.keyDirectories.join(', ')}\n`;
     }
-    
+
     if (structure.entryPoints.length > 0) {
       prompt += `- Entry points: ${structure.entryPoints.join(', ')}\n`;
     }
@@ -381,20 +417,21 @@ Do NOT make up information - only report what you can infer from the provided co
       prompt += `\n## Manifest Information\n`;
       if (manifest.name) prompt += `- Name: ${manifest.name}\n`;
       if (manifest.version) prompt += `- Version: ${manifest.version}\n`;
-      if (manifest.description) prompt += `- Description: ${manifest.description}\n`;
-      
+      if (manifest.description)
+        prompt += `- Description: ${manifest.description}\n`;
+
       if (manifest.dependencies) {
         const depCount = Object.keys(manifest.dependencies).length;
         const topDeps = Object.keys(manifest.dependencies).slice(0, 10);
         prompt += `- Dependencies (${depCount} total): ${topDeps.join(', ')}${depCount > 10 ? '...' : ''}\n`;
       }
-      
+
       if (manifest.devDependencies) {
         const devDepCount = Object.keys(manifest.devDependencies).length;
         const topDevDeps = Object.keys(manifest.devDependencies).slice(0, 5);
         prompt += `- Dev dependencies (${devDepCount} total): ${topDevDeps.join(', ')}${devDepCount > 5 ? '...' : ''}\n`;
       }
-      
+
       if (manifest.scripts) {
         prompt += `- Available scripts: ${Object.keys(manifest.scripts).join(', ')}\n`;
       }
@@ -489,7 +526,7 @@ Do NOT make up information - only report what you can infer from the provided co
     const total = await this.lanceDBService.getProjectCount();
 
     return {
-      projects: projects.map(p => ({
+      projects: projects.map((p) => ({
         id: p.id,
         name: p.name,
         path: p.path,
@@ -528,7 +565,9 @@ Do NOT make up information - only report what you can infer from the provided co
   /**
    * Delete a project
    */
-  async deleteProject(id: string): Promise<{ success: boolean; message: string }> {
+  async deleteProject(
+    id: string,
+  ): Promise<{ success: boolean; message: string }> {
     try {
       await this.lanceDBService.deleteProject(id);
       return {
@@ -546,10 +585,13 @@ Do NOT make up information - only report what you can infer from the provided co
   /**
    * Search projects
    */
-  async searchProjects(query: string, limit: number = 10): Promise<ProjectResponseDto[]> {
+  async searchProjects(
+    query: string,
+    limit: number = 10,
+  ): Promise<ProjectResponseDto[]> {
     const results = await this.lanceDBService.searchProjects(query, limit);
-    
-    return results.map(p => ({
+
+    return results.map((p) => ({
       id: p.id,
       name: p.name,
       path: p.path,
@@ -564,9 +606,13 @@ Do NOT make up information - only report what you can infer from the provided co
   /**
    * Detect if a folder contains a codebase
    */
-  detectCodebase(folderPath: string): { isCodebase: boolean; type?: string; techStack?: string[] } {
+  detectCodebase(folderPath: string): {
+    isCodebase: boolean;
+    type?: string;
+    techStack?: string[];
+  } {
     const detection = this.codebaseAnalyzer.detectCodebase(folderPath);
-    
+
     if (!detection) {
       return { isCodebase: false };
     }
@@ -581,16 +627,27 @@ Do NOT make up information - only report what you can infer from the provided co
   /**
    * Scan a directory to discover all codebases
    */
-  scanDirectory(folderPath: string, maxDepth: number = 3): {
+  scanDirectory(
+    folderPath: string,
+    maxDepth: number = 3,
+  ): {
     success: boolean;
     message: string;
-    codebases: Array<{ path: string; name: string; type: string; techStack: string[] }>;
+    codebases: Array<{
+      path: string;
+      name: string;
+      type: string;
+      techStack: string[];
+    }>;
     total: number;
   } {
     try {
       this.logger.log(`Scanning directory for codebases: ${folderPath}`);
-      const codebases = this.codebaseAnalyzer.discoverCodebases(folderPath, maxDepth);
-      
+      const codebases = this.codebaseAnalyzer.discoverCodebases(
+        folderPath,
+        maxDepth,
+      );
+
       return {
         success: true,
         message: `Found ${codebases.length} codebase(s) in ${folderPath}`,
@@ -628,13 +685,14 @@ Do NOT make up information - only report what you can infer from the provided co
 
     // First, discover all codebases
     const scanResult = this.scanDirectory(folderPath, maxDepth);
-    
+
     if (!scanResult.success || scanResult.total === 0) {
       return {
         success: false,
-        message: scanResult.total === 0 
-          ? 'No codebases found in the specified directory'
-          : scanResult.message,
+        message:
+          scanResult.total === 0
+            ? 'No codebases found in the specified directory'
+            : scanResult.message,
         indexed: 0,
         failed: 0,
         projects: [],
@@ -651,7 +709,7 @@ Do NOT make up information - only report what you can infer from the provided co
     for (const codebase of scanResult.codebases) {
       try {
         this.logger.log(`Indexing: ${codebase.name} (${codebase.path})`);
-        
+
         const result = await this.indexProject({
           folderPath: codebase.path,
           quickMode,
@@ -671,7 +729,9 @@ Do NOT make up information - only report what you can infer from the provided co
     }
 
     const elapsed = Date.now() - startTime;
-    this.logger.log(`Batch indexing complete: ${indexed} indexed, ${failed} failed (${elapsed}ms)`);
+    this.logger.log(
+      `Batch indexing complete: ${indexed} indexed, ${failed} failed (${elapsed}ms)`,
+    );
 
     return {
       success: indexed > 0,

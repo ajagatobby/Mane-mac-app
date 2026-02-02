@@ -423,6 +423,7 @@ struct RaycastPanelContent: View {
     @State private var searchTask: Task<Void, Never>?
     @State private var streamingContent = ""
     @State private var isStreaming = false
+    @State private var isTranscribing = false
     @State private var attachedFile: URL? = nil
     @State private var attachedFileIndexed = false
     @State private var attachedFileId: String? = nil
@@ -514,7 +515,7 @@ struct RaycastPanelContent: View {
         case "Summarize:":
             return "Ready to summarize! Add a document or audio\nfile and ask for a summary."
         case "Transcribe:":
-            return "Ready to transcribe! Press ↵ to start\nor ask about specific parts of the audio."
+            return "Ready to transcribe! Press ↵ to get the\nfull transcription using Whisper."
         case "Write:":
             return "Ready to write! Describe what you'd like\nto create based on this document."
         default:
@@ -1315,6 +1316,7 @@ struct RaycastPanelContent: View {
                         results = []
                         streamingContent = ""
                         isStreaming = false
+                        isTranscribing = false
                         attachedFile = nil
                         attachedFileIndexed = false
                         attachedFileId = nil
@@ -1421,7 +1423,9 @@ struct RaycastPanelContent: View {
                                                 .font(.system(size: 32, weight: .light))
                                                 .foregroundStyle(tool.gradientColors.first ?? Color(white: 0.65))
                                             
-                                            if attachedFileIndexed {
+                                            // Transcribe doesn't need indexing - always show hint
+                                            // Other tools need indexing to be complete
+                                            if attachedFileIndexed || tool.prefix == "Transcribe:" {
                                                 Text(toolHintText)
                                                     .font(.system(size: 13))
                                                     .foregroundStyle(Color(white: 0.45))
@@ -1457,8 +1461,13 @@ struct RaycastPanelContent: View {
                             
                             // Streaming message
                             if isStreaming {
-                                StreamingChatBubble(content: streamingContent)
-                                    .id("streaming")
+                                if isTranscribing {
+                                    TranscriptionShimmerBubble()
+                                        .id("streaming")
+                                } else {
+                                    StreamingChatBubble(content: streamingContent)
+                                        .id("streaming")
+                                }
                             }
                             
                             // Bottom padding for fade mask
@@ -1513,12 +1522,18 @@ struct RaycastPanelContent: View {
                     attachedFile = url
                     attachedFileIndexed = false
                     attachedFileId = nil
-                    indexingStatus = "Preparing..."
+                    // For Transcribe tool, show "Ready" since no indexing needed
+                    indexingStatus = activeToolPrefix?.prefix == "Transcribe:" ? "Ready" : "Preparing..."
                 }
                 
-                // Index the file
-                Task {
-                    await indexAttachedFile(url, didStartAccess: false)
+                // Skip indexing for Transcribe tool - it calls Whisper directly
+                if activeToolPrefix?.prefix != "Transcribe:" {
+                    Task {
+                        await indexAttachedFile(url, didStartAccess: false)
+                    }
+                } else {
+                    // Mark as ready immediately for Transcribe
+                    attachedFileIndexed = true
                 }
                 
                 return true
@@ -1552,18 +1567,25 @@ struct RaycastPanelContent: View {
                     case .success(let urls):
                         if let url = urls.first {
                             // Start security-scoped access for sandboxed apps
-                            let didStartAccess = url.startAccessingSecurityScopedResource()
+                            _ = url.startAccessingSecurityScopedResource()
                             
                             withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
                                 attachedFile = url
                                 attachedFileIndexed = false
                                 attachedFileId = nil
-                                indexingStatus = "Preparing..."
+                                // For Transcribe tool, show "Ready" since no indexing needed
+                                indexingStatus = activeToolPrefix?.prefix == "Transcribe:" ? "Ready" : "Preparing..."
                             }
                             
-                            // Index the file automatically
-                            Task {
-                                await indexAttachedFile(url, didStartAccess: didStartAccess)
+                            // Skip indexing for Transcribe tool - it calls Whisper directly
+                            if activeToolPrefix?.prefix != "Transcribe:" {
+                                Task {
+                                    await indexAttachedFile(url, didStartAccess: true)
+                                }
+                            } else {
+                                // Mark as ready immediately for Transcribe (no indexing needed)
+                                // Keep security access - will be stopped when file is removed or after transcription
+                                attachedFileIndexed = true
                             }
                         }
                     case .failure:
@@ -1899,10 +1921,12 @@ struct RaycastPanelContent: View {
             guard !searchQuery.isEmpty else { return }
             let q = searchQuery
             let userQuery = queryWithoutPrefix
+            // Capture tool prefix BEFORE clearing searchQuery (since activeToolPrefix depends on it)
+            let tool = activeToolPrefix
             searchQuery = ""
             
             // Check if tool mode requires a document
-            if let tool = activeToolPrefix {
+            if let tool = tool {
                 // Tool mode - require document attachment
                 guard let file = attachedFile else {
                     chatMessages.append(ChatMessage(content: q, isUser: true))
@@ -1913,7 +1937,17 @@ struct RaycastPanelContent: View {
                     return
                 }
                 
-                // Ensure document is indexed before proceeding
+                let fileName = file.lastPathComponent
+                
+                // Handle Transcribe tool specially - call Whisper directly without LLM
+                // Transcribe doesn't need indexing - it calls Whisper directly
+                if tool.prefix == "Transcribe:" {
+                    chatMessages.append(ChatMessage(content: q, isUser: true))
+                    transcribeAudioDirectly(filePath: file.path)
+                    return
+                }
+                
+                // For other tools (Summarize, Write), ensure document is indexed before proceeding
                 guard attachedFileIndexed else {
                     chatMessages.append(ChatMessage(content: q, isUser: true))
                     chatMessages.append(ChatMessage(
@@ -1922,8 +1956,6 @@ struct RaycastPanelContent: View {
                     ))
                     return
                 }
-                
-                let fileName = file.lastPathComponent
                 
                 // Build tool-specific queries that strictly focus on the document
                 let contextQuery: String
@@ -1934,13 +1966,6 @@ struct RaycastPanelContent: View {
                     
                     Task: Summarize the document '\(fileName)'.
                     \(userQuery.isEmpty ? "Provide a comprehensive summary covering the main points, key findings, and important details." : "Focus on: \(userQuery)")
-                    """
-                case "Transcribe:":
-                    contextQuery = """
-                    [INSTRUCTION: Only respond based on the content of the attached audio file '\(fileName)'. Do not use any external knowledge. If the question is unrelated to the audio, politely redirect to the audio content.]
-                    
-                    Task: Transcribe the audio file '\(fileName)'.
-                    \(userQuery.isEmpty ? "Provide a complete transcription of the audio content." : "Additional request: \(userQuery)")
                     """
                 case "Write:":
                     contextQuery = """
@@ -2017,6 +2042,48 @@ struct RaycastPanelContent: View {
                     chatMessages.append(ChatMessage(content: "Error: \(error.localizedDescription)", isUser: false))
                     streamingContent = ""
                     isStreaming = false
+                }
+            }
+        }
+    }
+    
+    /// Transcribe audio file directly using Whisper (no LLM processing)
+    /// - Parameter filePath: Path to the audio file
+    private func transcribeAudioDirectly(filePath: String) {
+        isStreaming = true
+        isTranscribing = true
+        streamingContent = ""
+        
+        Task {
+            do {
+                let response = try await apiService.transcribe(filePath: filePath)
+                
+                await MainActor.run {
+                    // Format the transcription result
+                    let transcriptionText = """
+                    **Transcription of \(response.fileName):**
+                    
+                    \(response.transcription)
+                    """
+                    
+                    chatMessages.append(ChatMessage(
+                        content: transcriptionText,
+                        isUser: false,
+                        sources: [filePath]
+                    ))
+                    streamingContent = ""
+                    isStreaming = false
+                    isTranscribing = false
+                }
+            } catch {
+                await MainActor.run {
+                    chatMessages.append(ChatMessage(
+                        content: "Failed to transcribe audio: \(error.localizedDescription)",
+                        isUser: false
+                    ))
+                    streamingContent = ""
+                    isStreaming = false
+                    isTranscribing = false
                 }
             }
         }
@@ -2634,6 +2701,149 @@ struct StreamingChatBubble: View {
             Spacer(minLength: 60)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - Transcription Shimmer Bubble
+
+struct TranscriptionShimmerBubble: View {
+    @State private var shimmerOffset: CGFloat = -200
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            // AI avatar with waveform icon for transcription
+            ZStack {
+                Image(systemName: "waveform")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 24, height: 24)
+            .background(
+                LinearGradient(
+                    colors: [Color(red: 0.55, green: 0.4, blue: 0.95), Color(red: 0.45, green: 0.3, blue: 0.85)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Transcribing")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.55, green: 0.4, blue: 0.95))
+                
+                // Shimmer content
+                VStack(alignment: .leading, spacing: 8) {
+                    // Waveform animation
+                    HStack(spacing: 3) {
+                        ForEach(0..<12, id: \.self) { index in
+                            WaveformBar(index: index)
+                        }
+                    }
+                    .frame(height: 24)
+                    
+                    // Shimmer text placeholder lines
+                    VStack(alignment: .leading, spacing: 6) {
+                        ShimmerLine(width: 280)
+                        ShimmerLine(width: 220)
+                        ShimmerLine(width: 250)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(white: 0.88))
+                        .overlay(
+                            // Shimmer overlay
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            Color.white.opacity(0),
+                                            Color.white.opacity(0.4),
+                                            Color.white.opacity(0)
+                                        ],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .offset(x: shimmerOffset)
+                                .mask(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        )
+                )
+            }
+            .frame(maxWidth: 350, alignment: .leading)
+            
+            Spacer(minLength: 60)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear {
+            withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
+                shimmerOffset = 400
+            }
+        }
+    }
+}
+
+// Animated waveform bar
+struct WaveformBar: View {
+    let index: Int
+    @State private var height: CGFloat = 4
+    
+    var body: some View {
+        RoundedRectangle(cornerRadius: 2)
+            .fill(
+                LinearGradient(
+                    colors: [Color(red: 0.55, green: 0.4, blue: 0.95), Color(red: 0.45, green: 0.3, blue: 0.85)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .frame(width: 3, height: height)
+            .onAppear {
+                withAnimation(
+                    .easeInOut(duration: 0.4 + Double(index) * 0.05)
+                    .repeatForever(autoreverses: true)
+                    .delay(Double(index) * 0.08)
+                ) {
+                    height = CGFloat.random(in: 8...22)
+                }
+            }
+    }
+}
+
+// Shimmer placeholder line
+struct ShimmerLine: View {
+    let width: CGFloat
+    @State private var shimmerOffset: CGFloat = -100
+    
+    var body: some View {
+        RoundedRectangle(cornerRadius: 4)
+            .fill(Color(white: 0.82))
+            .frame(width: width, height: 10)
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0),
+                                Color.white.opacity(0.5),
+                                Color.white.opacity(0)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: 60)
+                    .offset(x: shimmerOffset)
+                    .mask(RoundedRectangle(cornerRadius: 4))
+            )
+            .onAppear {
+                withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+                    shimmerOffset = width + 30
+                }
+            }
     }
 }
 

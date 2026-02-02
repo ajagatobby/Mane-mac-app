@@ -34,7 +34,7 @@ export class ImageCaptioningService implements OnModuleInit {
   async checkMoondreamHealth(): Promise<boolean> {
     try {
       const ollamaUrl = this.configService.getOllamaUrl();
-      
+
       // First check if Ollama is running
       const response = await fetch(`${ollamaUrl}/api/tags`);
       if (!response.ok) {
@@ -46,9 +46,8 @@ export class ImageCaptioningService implements OnModuleInit {
       // Check if moondream model is available
       const data = await response.json();
       const models = data.models || [];
-      const hasMoondream = models.some(
-        (model: { name: string }) =>
-          model.name.toLowerCase().includes(this.modelName),
+      const hasMoondream = models.some((model: { name: string }) =>
+        model.name.toLowerCase().includes(this.modelName),
       );
 
       if (hasMoondream) {
@@ -192,9 +191,7 @@ export class ImageCaptioningService implements OnModuleInit {
         });
       }
 
-      const processed = await pipeline
-        .jpeg({ quality: 80 })
-        .toBuffer();
+      const processed = await pipeline.jpeg({ quality: 80 }).toBuffer();
 
       this.logger.log(
         `Prepared image for captioning: ${imageBuffer.length} -> ${processed.length} bytes`,
@@ -226,7 +223,9 @@ export class ImageCaptioningService implements OnModuleInit {
       .map((w) => w.toLowerCase());
 
     const searchTerms =
-      words.length > 0 ? ` Search terms: ${[...new Set(words)].join(', ')}.` : '';
+      words.length > 0
+        ? ` Search terms: ${[...new Set(words)].join(', ')}.`
+        : '';
 
     return `[image, picture, file, ${ext} format, ${fileName}] Image file: ${fileName}.${searchTerms}`;
   }

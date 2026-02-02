@@ -33,8 +33,12 @@ export class ProjectsController {
    * Set quickMode: false for LLM-powered analysis (slower but more detailed)
    */
   @Post('index')
-  async indexProject(@Body() dto: IndexProjectDto): Promise<IndexProjectResponseDto> {
-    this.logger.log(`Index project request: ${dto.folderPath} (quickMode: ${dto.quickMode !== false})`);
+  async indexProject(
+    @Body() dto: IndexProjectDto,
+  ): Promise<IndexProjectResponseDto> {
+    this.logger.log(
+      `Index project request: ${dto.folderPath} (quickMode: ${dto.quickMode !== false})`,
+    );
     return this.projectsService.indexProject(dto);
   }
 
@@ -43,7 +47,9 @@ export class ProjectsController {
    * POST /projects/analyze
    */
   @Post('analyze')
-  async analyzeProject(@Body() dto: IndexProjectDto): Promise<IndexProjectResponseDto> {
+  async analyzeProject(
+    @Body() dto: IndexProjectDto,
+  ): Promise<IndexProjectResponseDto> {
     this.logger.log(`Analyze project request: ${dto.folderPath}`);
     return this.projectsService.indexProjectWithAnalysis(dto);
   }
@@ -98,7 +104,9 @@ export class ProjectsController {
    * POST /projects/search
    */
   @Post('search')
-  async searchProjects(@Body() dto: SearchProjectsDto): Promise<ProjectResponseDto[]> {
+  async searchProjects(
+    @Body() dto: SearchProjectsDto,
+  ): Promise<ProjectResponseDto[]> {
     return this.projectsService.searchProjects(dto.query, dto.limit);
   }
 
@@ -107,7 +115,9 @@ export class ProjectsController {
    * POST /projects/scan
    */
   @Post('scan')
-  async scanDirectory(@Body() dto: ScanDirectoryDto): Promise<ScanDirectoryResponseDto> {
+  async scanDirectory(
+    @Body() dto: ScanDirectoryDto,
+  ): Promise<ScanDirectoryResponseDto> {
     this.logger.log(`Scan directory request: ${dto.folderPath}`);
     return this.projectsService.scanDirectory(dto.folderPath, dto.maxDepth);
   }
@@ -118,7 +128,12 @@ export class ProjectsController {
    */
   @Post('scan-and-index')
   async scanAndIndexAll(
-    @Body() body: { folderPath: string; maxDepth?: number; quickMode?: boolean },
+    @Body()
+    body: {
+      folderPath: string;
+      maxDepth?: number;
+      quickMode?: boolean;
+    },
   ): Promise<BatchIndexResponseDto> {
     this.logger.log(`Scan and index request: ${body.folderPath}`);
     return this.projectsService.scanAndIndexAll(

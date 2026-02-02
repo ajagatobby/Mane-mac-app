@@ -104,8 +104,8 @@ export class OllamaService implements OnModuleInit {
     this.logger.log('Searching for relevant context...');
     const searchResults = await this.searchAllDocuments(query, 5);
 
-    // Build context from search results
-    const context = this.buildContext(searchResults);
+    // Build context from search results (not tool mode, use default limits)
+    const context = this.buildContext(searchResults, false);
     const sources = searchResults.map((r) => ({
       fileName: r.fileName,
       filePath: r.filePath,
@@ -172,12 +172,13 @@ export class OllamaService implements OnModuleInit {
     const stats = await this.getDocumentStats();
 
     // Search for relevant documents (text + media)
-    // If documentIds are provided, filter to only those documents
+    // If documentIds are provided, filter to only those documents (tool mode)
+    const isToolMode = !!documentIds?.length;
     this.logger.log('Searching for relevant context...');
     const searchResults = await this.searchAllDocuments(query, 5, documentIds);
 
-    // Build context from search results
-    const context = this.buildContext(searchResults);
+    // Build context from search results (use larger limits for tool mode)
+    const context = this.buildContext(searchResults, isToolMode);
 
     // Extract only high-confidence sources (score >= 0.3) - important for quality
     // Deduplicate by filePath and limit to top 5
@@ -267,6 +268,11 @@ export class OllamaService implements OnModuleInit {
     }
   }
 
+  /**
+   * Build context string from search results for the LLM
+   * @param searchResults - Array of search results
+   * @param isToolMode - If true, use larger context limits for tool operations (summarize, etc.)
+   */
   private buildContext(
     searchResults: Array<{
       fileName: string;
@@ -274,20 +280,30 @@ export class OllamaService implements OnModuleInit {
       mediaType?: string;
       score: number;
     }>,
+    isToolMode: boolean = false,
   ): string {
     if (searchResults.length === 0) {
       return 'No relevant documents found in the knowledge base.';
     }
 
+    // Use larger context limits for tool mode (summarize, etc.) to ensure full content
+    const defaultMaxLength = 1000;
+    const toolModeMaxLength = 5000;
+    const maxLength = isToolMode ? toolModeMaxLength : defaultMaxLength;
+
     const contextParts = searchResults.map((result, index) => {
       const mediaType = result.mediaType || 'text';
 
-      // For media files, describe them instead of showing content
+      // For images - show the actual caption/description (not file path)
+      // The content field contains the Moondream-generated caption
       if (mediaType === 'image') {
-        return `[Image ${index + 1}: ${result.fileName}]\nThis is an image file located at: ${result.content}`;
+        const content =
+          result.content.length > maxLength
+            ? result.content.substring(0, maxLength) + '...'
+            : result.content;
+        return `[Image ${index + 1}: ${result.fileName}]\nDescription: ${content}`;
       } else if (mediaType === 'audio') {
         // Audio has transcript in content
-        const maxLength = 1000;
         const content =
           result.content.length > maxLength
             ? result.content.substring(0, maxLength) + '...'
@@ -296,7 +312,6 @@ export class OllamaService implements OnModuleInit {
       }
 
       // Text documents
-      const maxLength = 1000;
       const content =
         result.content.length > maxLength
           ? result.content.substring(0, maxLength) + '...'

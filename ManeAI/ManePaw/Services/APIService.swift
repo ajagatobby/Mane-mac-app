@@ -199,6 +199,21 @@ struct BatchIndexError: Codable {
     let error: String
 }
 
+// MARK: - Transcribe Models
+
+struct TranscribeRequest: Codable {
+    let filePath: String
+}
+
+struct TranscribeResponse: Codable {
+    let transcription: String
+    let fileName: String
+    let filePath: String
+    let durationSeconds: Double?
+    let success: Bool
+    let message: String?
+}
+
 // MARK: - Generic Response
 
 struct SuccessResponse: Codable {
@@ -408,6 +423,17 @@ class APIService: ObservableObject {
     
     func getOllamaStatus() async throws -> OllamaStatus {
         return try await get(path: "/chat/status")
+    }
+    
+    // MARK: - Transcribe Endpoints
+    
+    /// Transcribe an audio file directly using Whisper
+    /// Returns raw transcription without LLM processing
+    /// - Parameter filePath: Path to the audio file
+    /// - Returns: TranscribeResponse with the transcription text
+    func transcribe(filePath: String) async throws -> TranscribeResponse {
+        let request = TranscribeRequest(filePath: filePath)
+        return try await post(path: "/transcribe", body: request)
     }
     
     // MARK: - Project Endpoints

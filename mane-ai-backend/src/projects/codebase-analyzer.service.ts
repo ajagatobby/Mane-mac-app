@@ -69,7 +69,7 @@ const MANIFEST_FILES: Record<string, ManifestDetection> = {
     file: 'pubspec.yaml',
     techStack: ['Dart', 'Flutter'],
   },
-  'Gemfile': {
+  Gemfile: {
     type: 'ruby',
     file: 'Gemfile',
     techStack: ['Ruby'],
@@ -84,7 +84,7 @@ const MANIFEST_FILES: Record<string, ManifestDetection> = {
     file: 'CMakeLists.txt',
     techStack: ['C++', 'CMake'],
   },
-  'Makefile': {
+  Makefile: {
     type: 'make',
     file: 'Makefile',
     techStack: ['Make'],
@@ -211,9 +211,12 @@ export class CodebaseAnalyzerService {
    * @param maxDepth - Maximum depth to search (default: 3)
    * @returns Array of discovered codebases
    */
-  discoverCodebases(rootPath: string, maxDepth: number = 3): DiscoveredCodebase[] {
+  discoverCodebases(
+    rootPath: string,
+    maxDepth: number = 3,
+  ): DiscoveredCodebase[] {
     const codebases: DiscoveredCodebase[] = [];
-    
+
     if (!fs.existsSync(rootPath)) {
       return codebases;
     }
@@ -224,7 +227,7 @@ export class CodebaseAnalyzerService {
     }
 
     this.scanForCodebases(rootPath, rootPath, codebases, 0, maxDepth);
-    
+
     this.logger.log(`Discovered ${codebases.length} codebases in ${rootPath}`);
     return codebases;
   }
@@ -261,10 +264,10 @@ export class CodebaseAnalyzerService {
 
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      
+
       // Skip ignored directories
       if (IGNORED_DIRECTORIES.has(entry.name)) continue;
-      
+
       // Skip hidden directories
       if (entry.name.startsWith('.')) continue;
 
@@ -312,9 +315,12 @@ export class CodebaseAnalyzerService {
   /**
    * Parse manifest file to extract project metadata
    */
-  parseManifest(folderPath: string, detection: ManifestDetection): ProjectManifest | null {
+  parseManifest(
+    folderPath: string,
+    detection: ManifestDetection,
+  ): ProjectManifest | null {
     const manifestPath = path.join(folderPath, detection.file);
-    
+
     if (!fs.existsSync(manifestPath)) {
       return null;
     }
@@ -362,7 +368,7 @@ export class CodebaseAnalyzerService {
     // Simple TOML parsing for Cargo.toml
     const lines = content.split('\n');
     const manifest: ProjectManifest = { type: 'rust' };
-    
+
     let currentSection = '';
     for (const line of lines) {
       const trimmed = line.trim();
@@ -370,13 +376,16 @@ export class CodebaseAnalyzerService {
         currentSection = trimmed.replace(/[\[\]]/g, '');
       } else if (trimmed.includes('=') && currentSection === 'package') {
         const [key, ...valueParts] = trimmed.split('=');
-        const value = valueParts.join('=').trim().replace(/^["']|["']$/g, '');
+        const value = valueParts
+          .join('=')
+          .trim()
+          .replace(/^["']|["']$/g, '');
         if (key.trim() === 'name') manifest.name = value;
         if (key.trim() === 'version') manifest.version = value;
         if (key.trim() === 'description') manifest.description = value;
       }
     }
-    
+
     return manifest;
   }
 
@@ -384,36 +393,41 @@ export class CodebaseAnalyzerService {
     // Simple parsing for pyproject.toml
     const lines = content.split('\n');
     const manifest: ProjectManifest = { type: 'python' };
-    
+
     let currentSection = '';
     for (const line of lines) {
       const trimmed = line.trim();
       if (trimmed.startsWith('[')) {
         currentSection = trimmed.replace(/[\[\]]/g, '');
-      } else if (trimmed.includes('=') && 
-                 (currentSection === 'project' || currentSection === 'tool.poetry')) {
+      } else if (
+        trimmed.includes('=') &&
+        (currentSection === 'project' || currentSection === 'tool.poetry')
+      ) {
         const [key, ...valueParts] = trimmed.split('=');
-        const value = valueParts.join('=').trim().replace(/^["']|["']$/g, '');
+        const value = valueParts
+          .join('=')
+          .trim()
+          .replace(/^["']|["']$/g, '');
         if (key.trim() === 'name') manifest.name = value;
         if (key.trim() === 'version') manifest.version = value;
         if (key.trim() === 'description') manifest.description = value;
       }
     }
-    
+
     return manifest;
   }
 
   private parseGoMod(content: string): ProjectManifest {
     const lines = content.split('\n');
     const manifest: ProjectManifest = { type: 'go' };
-    
+
     for (const line of lines) {
       if (line.startsWith('module ')) {
         manifest.name = line.replace('module ', '').trim();
         break;
       }
     }
-    
+
     return manifest;
   }
 
@@ -421,7 +435,7 @@ export class CodebaseAnalyzerService {
     // Simple YAML parsing
     const lines = content.split('\n');
     const manifest: ProjectManifest = { type: 'dart' };
-    
+
     for (const line of lines) {
       if (line.startsWith('name:')) {
         manifest.name = line.split(':')[1].trim();
@@ -431,7 +445,7 @@ export class CodebaseAnalyzerService {
         manifest.description = line.split(':')[1].trim();
       }
     }
-    
+
     return manifest;
   }
 
@@ -440,7 +454,11 @@ export class CodebaseAnalyzerService {
    * @param maxDepth - Maximum directory depth to scan (default: 4)
    * @param maxFiles - Maximum files to count before stopping detailed scan (default: 5000)
    */
-  scanStructure(folderPath: string, maxDepth: number = 4, maxFiles: number = 5000): CodebaseStructure {
+  scanStructure(
+    folderPath: string,
+    maxDepth: number = 4,
+    maxFiles: number = 5000,
+  ): CodebaseStructure {
     const structure: CodebaseStructure = {
       totalFiles: 0,
       totalDirectories: 0,
@@ -452,7 +470,14 @@ export class CodebaseAnalyzerService {
       hasDocumentation: false,
     };
 
-    this.walkDirectory(folderPath, folderPath, structure, 0, maxDepth, maxFiles);
+    this.walkDirectory(
+      folderPath,
+      folderPath,
+      structure,
+      0,
+      maxDepth,
+      maxFiles,
+    );
 
     return structure;
   }
@@ -479,7 +504,7 @@ export class CodebaseAnalyzerService {
     for (const entry of entries) {
       // Check file limit
       if (structure.totalFiles >= maxFiles) return false;
-      
+
       const fullPath = path.join(currentPath, entry.name);
       const relativePath = path.relative(rootPath, fullPath);
 
@@ -492,12 +517,26 @@ export class CodebaseAnalyzerService {
         // Identify key directories (only at shallow depth)
         if (depth <= 2) {
           const lowerName = entry.name.toLowerCase();
-          if (['src', 'lib', 'app', 'components', 'services', 'utils', 'api', 'core', 'modules'].includes(lowerName)) {
+          if (
+            [
+              'src',
+              'lib',
+              'app',
+              'components',
+              'services',
+              'utils',
+              'api',
+              'core',
+              'modules',
+            ].includes(lowerName)
+          ) {
             structure.keyDirectories.push(relativePath);
           }
 
           // Check for tests/docs
-          if (['test', 'tests', '__tests__', 'spec', 'specs'].includes(lowerName)) {
+          if (
+            ['test', 'tests', '__tests__', 'spec', 'specs'].includes(lowerName)
+          ) {
             structure.hasTests = true;
           }
           if (['docs', 'documentation', 'doc'].includes(lowerName)) {
@@ -506,7 +545,14 @@ export class CodebaseAnalyzerService {
         }
 
         // Recurse
-        const shouldContinue = this.walkDirectory(rootPath, fullPath, structure, depth + 1, maxDepth, maxFiles);
+        const shouldContinue = this.walkDirectory(
+          rootPath,
+          fullPath,
+          structure,
+          depth + 1,
+          maxDepth,
+          maxFiles,
+        );
         if (!shouldContinue) return false;
       } else {
         structure.totalFiles++;
@@ -514,7 +560,8 @@ export class CodebaseAnalyzerService {
         // Count by extension
         const ext = path.extname(entry.name).toLowerCase();
         if (ext) {
-          structure.filesByExtension[ext] = (structure.filesByExtension[ext] || 0) + 1;
+          structure.filesByExtension[ext] =
+            (structure.filesByExtension[ext] || 0) + 1;
         }
 
         // Check for entry points (only at root or shallow depth)
@@ -528,19 +575,25 @@ export class CodebaseAnalyzerService {
         }
 
         // Check for documentation
-        if (entry.name.toLowerCase() === 'readme.md' || entry.name.toLowerCase() === 'readme.txt') {
+        if (
+          entry.name.toLowerCase() === 'readme.md' ||
+          entry.name.toLowerCase() === 'readme.txt'
+        ) {
           structure.hasDocumentation = true;
         }
       }
     }
-    
+
     return true;
   }
 
   /**
    * Read sample files for LLM analysis (README, entry points, configs)
    */
-  readSampleFiles(folderPath: string, structure: CodebaseStructure): Record<string, string> {
+  readSampleFiles(
+    folderPath: string,
+    structure: CodebaseStructure,
+  ): Record<string, string> {
     const samples: Record<string, string> = {};
     const maxFileSize = 5000; // Max chars per file
 
@@ -571,12 +624,18 @@ export class CodebaseAnalyzerService {
     }
 
     // Read key config files (first 3)
-    const importantConfigs = ['tsconfig.json', 'package.json', 'Cargo.toml', 'pyproject.toml', 'go.mod'];
+    const importantConfigs = [
+      'tsconfig.json',
+      'package.json',
+      'Cargo.toml',
+      'pyproject.toml',
+      'go.mod',
+    ];
     let configCount = 0;
     for (const config of structure.configFiles) {
       if (configCount >= 3) break;
       const configName = path.basename(config);
-      if (importantConfigs.some(ic => configName === ic)) {
+      if (importantConfigs.some((ic) => configName === ic)) {
         const configPath = path.join(folderPath, config);
         try {
           const content = fs.readFileSync(configPath, 'utf-8');
@@ -630,7 +689,7 @@ export class CodebaseAnalyzerService {
     // Infer from dependencies (for Node.js projects)
     if (manifest && manifest.dependencies) {
       const deps = { ...manifest.dependencies, ...manifest.devDependencies };
-      
+
       if (deps['react']) techStack.add('React');
       if (deps['vue']) techStack.add('Vue.js');
       if (deps['svelte']) techStack.add('Svelte');
@@ -655,7 +714,11 @@ export class CodebaseAnalyzerService {
     }
 
     // Check for Docker
-    if (structure.configFiles.some(f => f.includes('Dockerfile') || f.includes('docker-compose'))) {
+    if (
+      structure.configFiles.some(
+        (f) => f.includes('Dockerfile') || f.includes('docker-compose'),
+      )
+    ) {
       techStack.add('Docker');
     }
 
@@ -684,21 +747,34 @@ export class CodebaseAnalyzerService {
     // Add characteristics
     if (structure.hasTests) tags.add('tested');
     if (structure.hasDocumentation) tags.add('documented');
-    if (structure.configFiles.some(f => f.includes('docker'))) tags.add('containerized');
+    if (structure.configFiles.some((f) => f.includes('docker')))
+      tags.add('containerized');
     if (structure.totalFiles > 100) tags.add('large-project');
     else if (structure.totalFiles > 20) tags.add('medium-project');
     else tags.add('small-project');
 
     // Infer purpose from key directories
-    if (structure.keyDirectories.some(d => d.includes('api') || d.includes('routes'))) {
+    if (
+      structure.keyDirectories.some(
+        (d) => d.includes('api') || d.includes('routes'),
+      )
+    ) {
       tags.add('api');
       tags.add('backend');
     }
-    if (structure.keyDirectories.some(d => d.includes('components') || d.includes('views'))) {
+    if (
+      structure.keyDirectories.some(
+        (d) => d.includes('components') || d.includes('views'),
+      )
+    ) {
       tags.add('frontend');
       tags.add('ui');
     }
-    if (structure.keyDirectories.some(d => d.includes('cli') || d.includes('commands'))) {
+    if (
+      structure.keyDirectories.some(
+        (d) => d.includes('cli') || d.includes('commands'),
+      )
+    ) {
       tags.add('cli');
     }
 
