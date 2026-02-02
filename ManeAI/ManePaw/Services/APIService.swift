@@ -303,11 +303,24 @@ class APIService: ObservableObject {
         return try await post(path: "/chat", body: request)
     }
     
+    /// Chat stream chunk - either content or sources at the end
+    enum ChatStreamChunk {
+        case content(String)
+        case sources([ChatStreamSource])
+    }
+    
+    /// Source document info from streaming response
+    struct ChatStreamSource {
+        let fileName: String
+        let filePath: String
+        let mediaType: String
+    }
+    
     /// Stream chat response with optional document filtering
     /// - Parameters:
     ///   - query: The user's query
     ///   - documentIds: Optional array of document IDs to restrict search to. When provided, only these documents will be searched.
-    func chatStream(query: String, documentIds: [String]? = nil) -> AsyncThrowingStream<String, Error> {
+    func chatStream(query: String, documentIds: [String]? = nil) -> AsyncThrowingStream<ChatStreamChunk, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -343,12 +356,26 @@ class APIService: ObservableObject {
                                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                                 
                                 if let done = json["done"] as? Bool, done {
+                                    // Parse sources if available
+                                    if let sourcesArray = json["sources"] as? [[String: Any]] {
+                                        let sources = sourcesArray.compactMap { sourceDict -> ChatStreamSource? in
+                                            guard let fileName = sourceDict["fileName"] as? String,
+                                                  let filePath = sourceDict["filePath"] as? String else {
+                                                return nil
+                                            }
+                                            let mediaType = sourceDict["mediaType"] as? String ?? "text"
+                                            return ChatStreamSource(fileName: fileName, filePath: filePath, mediaType: mediaType)
+                                        }
+                                        if !sources.isEmpty {
+                                            continuation.yield(.sources(sources))
+                                        }
+                                    }
                                     continuation.finish()
                                     return
                                 }
                                 
                                 if let content = json["content"] as? String {
-                                    continuation.yield(content)
+                                    continuation.yield(.content(content))
                                 }
                                 
                                 if let error = json["error"] as? String {

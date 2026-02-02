@@ -56,25 +56,61 @@ final class IndexedFile {
     }
 }
 
+// MARK: - File Attributes
+
+struct FileAttributes {
+    let size: Int64
+    let modified: Date
+    let created: Date
+}
+
 // MARK: - File Hashing Utility
 
 enum FileHasher {
     /// Compute SHA256 hash of file content
+    /// Uses chunked reading for memory efficiency with large files
     static func hash(fileAt url: URL) -> String? {
-        guard let data = try? Data(contentsOf: url) else {
+        do {
+            let fileHandle = try FileHandle(forReadingFrom: url)
+            defer { try? fileHandle.close() }
+            
+            var hasher = SHA256()
+            let chunkSize = 1024 * 1024 // 1MB chunks
+            
+            while autoreleasepool(invoking: {
+                let data = fileHandle.readData(ofLength: chunkSize)
+                if data.isEmpty {
+                    return false
+                }
+                hasher.update(data: data)
+                return true
+            }) {}
+            
+            let digest = hasher.finalize()
+            return digest.map { String(format: "%02x", $0) }.joined()
+        } catch {
+            print("❌ Failed to hash file: \(error)")
             return nil
         }
-        let digest = SHA256.hash(data: data)
-        return digest.map { String(format: "%02x", $0) }.joined()
     }
     
-    /// Get file attributes (size, modification date)
-    static func attributes(fileAt url: URL) -> (size: Int64, modified: Date)? {
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path) else {
+    /// Get file attributes (size, modification date, creation date)
+    static func attributes(fileAt url: URL) -> FileAttributes? {
+        do {
+            let resourceValues = try url.resourceValues(forKeys: [
+                .fileSizeKey,
+                .contentModificationDateKey,
+                .creationDateKey
+            ])
+            
+            let size = Int64(resourceValues.fileSize ?? 0)
+            let modified = resourceValues.contentModificationDate ?? Date()
+            let created = resourceValues.creationDate ?? Date()
+            
+            return FileAttributes(size: size, modified: modified, created: created)
+        } catch {
+            print("❌ Failed to get file attributes: \(error)")
             return nil
         }
-        let size = (attrs[.size] as? Int64) ?? 0
-        let modified = (attrs[.modificationDate] as? Date) ?? Date()
-        return (size, modified)
     }
 }

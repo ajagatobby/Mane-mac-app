@@ -1,4 +1,10 @@
-import { Injectable, Logger, OnModuleInit, Inject, forwardRef } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { ConfigService } from '../config';
 import { LanceDBService } from '../lancedb';
 import { MultimodalService } from '../multimodal';
@@ -134,7 +140,20 @@ export class OllamaService implements OnModuleInit {
     }
   }
 
-  async *chatStream(query: string, documentIds?: string[]): AsyncGenerator<StreamChunk, void, unknown> {
+  async *chatStream(
+    query: string,
+    documentIds?: string[],
+  ): AsyncGenerator<
+    StreamChunk & {
+      sources?: Array<{
+        fileName: string;
+        filePath: string;
+        mediaType: string;
+      }>;
+    },
+    void,
+    unknown
+  > {
     if (!this.chatModel) {
       throw new Error('Chat model not initialized');
     }
@@ -160,8 +179,28 @@ export class OllamaService implements OnModuleInit {
     // Build context from search results
     const context = this.buildContext(searchResults);
 
+    // Extract only high-confidence sources (score >= 0.3) - important for quality
+    // Deduplicate by filePath and limit to top 5
+    const MIN_CONFIDENCE_SCORE = 0.3;
+    const MAX_SOURCES = 5;
+
+    const seenPaths = new Set<string>();
+    const sources = searchResults
+      .filter((r) => r.score >= MIN_CONFIDENCE_SCORE)
+      .filter((r) => {
+        if (seenPaths.has(r.filePath)) return false;
+        seenPaths.add(r.filePath);
+        return true;
+      })
+      .slice(0, MAX_SOURCES)
+      .map((r) => ({
+        fileName: r.fileName,
+        filePath: r.filePath,
+        mediaType: r.mediaType || 'text',
+      }));
+
     // Create the RAG prompt with stats (adjust for filtered search)
-    const systemPrompt = documentIds?.length 
+    const systemPrompt = documentIds?.length
       ? this.createDocumentFocusedPrompt(context)
       : this.createSystemPrompt(context, stats);
 
@@ -180,7 +219,8 @@ export class OllamaService implements OnModuleInit {
         yield { content, done: false };
       }
 
-      yield { content: '', done: true };
+      // Send sources with the final done message
+      yield { content: '', done: true, sources };
       this.logger.log('Streaming completed');
     } catch (error: any) {
       this.logger.error('Error streaming from Ollama:', error.message);
@@ -214,7 +254,11 @@ export class OllamaService implements OnModuleInit {
     this.logger.log('Searching documents with MiniLM...');
 
     try {
-      const results = await this.lanceDBService.hybridSearch(query, limit, documentIds);
+      const results = await this.lanceDBService.hybridSearch(
+        query,
+        limit,
+        documentIds,
+      );
       this.logger.log(`Found ${results.length} results`);
       return results;
     } catch (err: any) {
@@ -293,7 +337,10 @@ export class OllamaService implements OnModuleInit {
 
   private createSystemPrompt(
     context: string,
-    stats: { total: number; byType: { text: number; image: number; audio: number } },
+    stats: {
+      total: number;
+      byType: { text: number; image: number; audio: number };
+    },
   ): string {
     return `You are a helpful AI assistant that answers questions about the user's files.
 

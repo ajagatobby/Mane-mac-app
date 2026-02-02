@@ -283,16 +283,23 @@ struct ChatView: View {
         
         do {
             var fullResponse = ""
+            var sources: [String] = []
             
             for try await chunk in apiService.chatStream(query: query) {
-                fullResponse += chunk
-                streamingMessage?.content = fullResponse
+                switch chunk {
+                case .content(let text):
+                    fullResponse += text
+                    streamingMessage?.content = fullResponse
+                case .sources(let streamSources):
+                    sources = streamSources.map { $0.filePath }
+                }
             }
             
             // Finalize the message
             let finalMessage = ChatMessage(
                 content: fullResponse,
                 isUser: false,
+                sources: sources,
                 isStreaming: false
             )
             withAnimation(ManeTheme.Animation.springFast) {

@@ -24,7 +24,7 @@ export class ChatService {
 
   async *chatStream(
     dto: ChatQueryDto,
-  ): AsyncGenerator<{ content: string; done: boolean }, void, unknown> {
+  ): AsyncGenerator<{ content: string; done: boolean; sources?: Array<{ fileName: string; filePath: string; mediaType: string }> }, void, unknown> {
     this.logger.log(
       `Processing streaming chat query: ${dto.query.substring(0, 50)}...`,
     );

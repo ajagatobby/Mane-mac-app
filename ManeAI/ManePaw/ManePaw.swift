@@ -288,7 +288,13 @@ struct RaycastPanelContent: View {
     @State private var attachedFileIndexed = false
     @State private var attachedFileId: String? = nil
     @State private var showFilePicker = false
+    @State private var showHomeFilePicker = false
     @State private var indexingStatus: String? = nil
+    @State private var homeIndexingFile: URL? = nil
+    @State private var homeIndexingProgress: String? = nil
+    @State private var homeIndexingComplete = false
+    @State private var homeIndexingTotal = 0
+    @State private var homeIndexingCurrent = 0
     @FocusState private var focused: Bool
     
     // Animation namespace for morphing effects
@@ -297,6 +303,7 @@ struct RaycastPanelContent: View {
     // Quick actions data - vibrant colors like Raycast
     private let quickActions: [(title: String, subtitle: String, icon: String, color: Color, id: String)] = [
         ("AI Chat", "Mane-paw AI", "sparkles", Color(red: 0.95, green: 0.3, blue: 0.35), "chat"),
+        ("Index Files", "Add files or folders", "plus.square.on.square", Color(red: 0.35, green: 0.65, blue: 0.95), "index"),
         ("Documents", "Search files", "doc.fill", Color(red: 1.0, green: 0.78, blue: 0.28), "search"),
         ("Projects", "Browse codebases", "folder.fill", Color(red: 0.98, green: 0.6, blue: 0.2), "projects")
     ]
@@ -697,6 +704,109 @@ struct RaycastPanelContent: View {
     private var quickActionsView: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
+                // Home indexing status indicator
+                if let file = homeIndexingFile {
+                    let isFolder = file.hasDirectoryPath
+                    
+                    HStack(spacing: 10) {
+                        ZStack {
+                            Image(systemName: isFolder ? "folder.fill" : "doc.fill")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.white)
+                                .frame(width: 24, height: 24)
+                                .background(
+                                    LinearGradient(
+                                        colors: isFolder 
+                                            ? [Color(red: 0.98, green: 0.6, blue: 0.2), Color(red: 0.9, green: 0.5, blue: 0.15)]
+                                            : [Color(red: 0.35, green: 0.65, blue: 0.95), Color(red: 0.25, green: 0.55, blue: 0.85)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    in: RoundedRectangle(cornerRadius: 5)
+                                )
+                            
+                            if homeIndexingTotal > 0 && !homeIndexingComplete {
+                                // Show progress circle for folder indexing
+                                Circle()
+                                    .trim(from: 0, to: CGFloat(homeIndexingCurrent) / CGFloat(max(homeIndexingTotal, 1)))
+                                    .stroke(Color(red: 0.3, green: 0.75, blue: 0.45), lineWidth: 2)
+                                    .frame(width: 10, height: 10)
+                                    .rotationEffect(.degrees(-90))
+                                    .background(Circle().fill(Color.white))
+                                    .offset(x: 10, y: -10)
+                            } else if indexingService.isIndexing || (homeIndexingTotal == 0 && !homeIndexingComplete && homeIndexingProgress != nil) {
+                                Circle()
+                                    .fill(Color.white)
+                                    .frame(width: 10, height: 10)
+                                    .overlay {
+                                        ProgressView()
+                                            .scaleEffect(0.4)
+                                    }
+                                    .offset(x: 10, y: -10)
+                            } else if homeIndexingComplete {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Color(red: 0.3, green: 0.75, blue: 0.45))
+                                    .background(Circle().fill(.white).frame(width: 8, height: 8))
+                                    .offset(x: 10, y: -10)
+                            }
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(file.lastPathComponent)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Color(white: 0.2))
+                                .lineLimit(1)
+                            
+                            // Show different completion message for folders
+                            if homeIndexingComplete {
+                                Text(homeIndexingProgress ?? (isFolder ? "Folder indexed" : "Indexed successfully"))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color(red: 0.3, green: 0.65, blue: 0.4))
+                            } else {
+                                Text(homeIndexingProgress ?? "Indexing...")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color(white: 0.5))
+                            }
+                        }
+                        
+                        Spacer()
+                        
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                                homeIndexingFile = nil
+                                homeIndexingProgress = nil
+                                homeIndexingComplete = false
+                            }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Color(white: 0.5))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(homeIndexingComplete ? Color(red: 0.92, green: 0.97, blue: 0.93) : Color(white: 0.94))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(
+                                homeIndexingComplete ? Color(red: 0.3, green: 0.75, blue: 0.45).opacity(0.3) : Color.clear,
+                                lineWidth: 1
+                            )
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 4)
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.95).combined(with: .opacity),
+                        removal: .scale(scale: 0.95).combined(with: .opacity)
+                    ))
+                    .animation(.spring(response: 0.3, dampingFraction: 0.9), value: homeIndexingComplete)
+                }
+                
                 // Section header - Raycast style
                 Text("Suggestions")
                     .font(.system(size: 12, weight: .semibold))
@@ -742,6 +852,190 @@ struct RaycastPanelContent: View {
                 }
             }
             .padding(.bottom, 8)
+            .animation(.spring(response: 0.3, dampingFraction: 0.9), value: homeIndexingFile != nil)
+        }
+        .fileImporter(
+            isPresented: $showHomeFilePicker,
+            allowedContentTypes: [.folder, .pdf, .plainText, .rtf, .data],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first {
+                    let didStartAccess = url.startAccessingSecurityScopedResource()
+                    
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                        homeIndexingFile = url
+                        homeIndexingComplete = false
+                        homeIndexingProgress = "Starting..."
+                        homeIndexingTotal = 0
+                        homeIndexingCurrent = 0
+                    }
+                    
+                    Task {
+                        await indexHomeItem(url, didStartAccess: didStartAccess)
+                    }
+                }
+            case .failure(let error):
+                print("File picker error: \(error)")
+            }
+        }
+        .onChange(of: showHomeFilePicker) { _, isShowing in
+            // Prevent panel from dismissing while file picker is open
+            if let panel = PanelManager.shared.panel {
+                panel.preventDismiss = isShowing
+            }
+        }
+    }
+    
+    private func indexHomeItem(_ url: URL, didStartAccess: Bool) async {
+        defer {
+            if didStartAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+        
+        // Check if it's a directory
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        
+        if exists && isDirectory.boolValue {
+            // It's a folder - index all supported files
+            await indexFolder(url)
+        } else {
+            // It's a single file
+            await indexSingleFile(url)
+        }
+    }
+    
+    private func indexFolder(_ folderURL: URL) async {
+        homeIndexingProgress = "Scanning folder..."
+        
+        // Supported file extensions for indexing (text, documents, images, audio)
+        let supportedExtensions = [
+            // Text documents
+            "pdf", "txt", "md", "rtf", "doc", "docx", "json", "csv", "xml", "html",
+            // Spreadsheets & presentations
+            "xlsx", "xls", "pptx",
+            // Images (for captioning)
+            "jpg", "jpeg", "png", "gif", "webp", "heic",
+            // Audio (for transcription)
+            "mp3", "wav", "m4a", "aac", "ogg", "flac"
+        ]
+        
+        // Find all supported files in the folder
+        var filesToIndex: [URL] = []
+        
+        if let enumerator = FileManager.default.enumerator(
+            at: folderURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) {
+            for case let fileURL as URL in enumerator {
+                let ext = fileURL.pathExtension.lowercased()
+                if supportedExtensions.contains(ext) {
+                    filesToIndex.append(fileURL)
+                }
+            }
+        }
+        
+        guard !filesToIndex.isEmpty else {
+            // No supported files found - show completion with info message
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                homeIndexingComplete = true
+                homeIndexingProgress = "No documents found"
+            }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                homeIndexingFile = nil
+                homeIndexingProgress = nil
+                homeIndexingComplete = false
+            }
+            return
+        }
+        
+        homeIndexingTotal = filesToIndex.count
+        homeIndexingCurrent = 0
+        
+        var indexedCount = 0
+        var skippedCount = 0
+        var failedCount = 0
+        
+        for (index, fileURL) in filesToIndex.enumerated() {
+            homeIndexingCurrent = index + 1
+            homeIndexingProgress = "Indexing \(homeIndexingCurrent)/\(homeIndexingTotal)..."
+            
+            let result = await indexingService.indexFileIfNeeded(fileURL)
+            
+            switch result {
+            case .indexed: indexedCount += 1
+            case .alreadyIndexed: skippedCount += 1
+            case .failed: failedCount += 1
+            }
+        }
+        
+        // Show completion summary
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+            homeIndexingComplete = true
+            if failedCount > 0 {
+                homeIndexingProgress = "\(indexedCount) indexed, \(skippedCount) skipped, \(failedCount) failed"
+            } else if skippedCount > 0 {
+                homeIndexingProgress = "\(indexedCount) indexed, \(skippedCount) already indexed"
+            } else {
+                homeIndexingProgress = "\(indexedCount) files indexed"
+            }
+        }
+        
+        // Auto-dismiss after 3 seconds
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+            homeIndexingFile = nil
+            homeIndexingProgress = nil
+            homeIndexingComplete = false
+            homeIndexingTotal = 0
+            homeIndexingCurrent = 0
+        }
+    }
+    
+    private func indexSingleFile(_ url: URL) async {
+        homeIndexingProgress = "Reading document..."
+        
+        let result = await indexingService.indexFileIfNeeded(url)
+        
+        switch result {
+        case .indexed:
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                homeIndexingComplete = true
+                homeIndexingProgress = nil
+            }
+            
+            // Auto-dismiss after 3 seconds
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                homeIndexingFile = nil
+                homeIndexingProgress = nil
+                homeIndexingComplete = false
+            }
+            
+        case .alreadyIndexed:
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                homeIndexingComplete = true
+                homeIndexingProgress = "Already indexed"
+            }
+            
+            // Auto-dismiss after 2 seconds
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                homeIndexingFile = nil
+                homeIndexingProgress = nil
+                homeIndexingComplete = false
+            }
+            
+        case .failed(let error):
+            homeIndexingProgress = "Failed: \(error.localizedDescription)"
         }
     }
     
@@ -1345,6 +1639,8 @@ struct RaycastPanelContent: View {
             case "chat":
                 searchMode = .chat
                 showChat = true
+            case "index":
+                showHomeFilePicker = true
             case "search":
                 searchMode = .documents
             case "projects":
@@ -1522,14 +1818,21 @@ struct RaycastPanelContent: View {
         streamingContent = ""
         
         Task {
+            var sources: [String] = []
+            
             do {
                 for try await chunk in apiService.chatStream(query: query, documentIds: documentIds) {
                     await MainActor.run {
-                        streamingContent += chunk
+                        switch chunk {
+                        case .content(let text):
+                            streamingContent += text
+                        case .sources(let streamSources):
+                            sources = streamSources.map { $0.filePath }
+                        }
                     }
                 }
                 await MainActor.run {
-                    chatMessages.append(ChatMessage(content: streamingContent, isUser: false))
+                    chatMessages.append(ChatMessage(content: streamingContent, isUser: false, sources: sources))
                     streamingContent = ""
                     isStreaming = false
                 }
@@ -1963,6 +2266,22 @@ struct ChatBubble: View {
                             in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                         )
                     
+                    // Source documents widget for AI messages
+                    if !message.isUser && !message.sources.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Sources")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Color(white: 0.5))
+                            
+                            FlowLayout(spacing: 6) {
+                                ForEach(Array(Set(message.sources)).prefix(5), id: \.self) { source in
+                                    SourceChip(filePath: source)
+                                }
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+                    
                     // Copy button for AI messages - positioned at bottom
                     if !message.isUser {
                         Button {
@@ -2013,6 +2332,78 @@ struct ChatBubble: View {
         .onHover { hovering in
             isHovered = hovering
         }
+    }
+}
+
+// MARK: - Source Chip (Clickable document link)
+
+struct SourceChip: View {
+    let filePath: String
+    @State private var isHovered = false
+    
+    private var fileName: String {
+        URL(fileURLWithPath: filePath).lastPathComponent
+    }
+    
+    private var fileExtension: String {
+        URL(fileURLWithPath: filePath).pathExtension.lowercased()
+    }
+    
+    private var iconName: String {
+        switch fileExtension {
+        case "pdf": return "doc.richtext"
+        case "txt", "md": return "doc.text"
+        case "jpg", "jpeg", "png", "gif", "webp", "heic": return "photo"
+        case "mp3", "wav", "m4a", "aac": return "waveform"
+        case "xlsx", "xls", "csv": return "tablecells"
+        default: return "doc.fill"
+        }
+    }
+    
+    private var iconColor: Color {
+        switch fileExtension {
+        case "pdf": return Color(red: 0.9, green: 0.3, blue: 0.3)
+        case "txt", "md": return Color(red: 0.4, green: 0.6, blue: 0.9)
+        case "jpg", "jpeg", "png", "gif", "webp", "heic": return Color(red: 0.3, green: 0.75, blue: 0.5)
+        case "mp3", "wav", "m4a", "aac": return Color(red: 0.6, green: 0.4, blue: 0.9)
+        case "xlsx", "xls", "csv": return Color(red: 0.2, green: 0.7, blue: 0.5)
+        default: return Color(red: 0.5, green: 0.5, blue: 0.5)
+        }
+    }
+    
+    var body: some View {
+        Button {
+            let url = URL(fileURLWithPath: filePath)
+            NSWorkspace.shared.open(url)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: iconName)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(iconColor)
+                
+                Text(fileName)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color(white: 0.3))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isHovered ? Color(white: 0.88) : Color(white: 0.92))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(iconColor.opacity(0.3), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.1)) {
+                isHovered = hovering
+            }
+        }
+        .help("Open \(fileName)")
     }
 }
 

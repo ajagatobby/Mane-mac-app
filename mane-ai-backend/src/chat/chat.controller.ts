@@ -36,7 +36,8 @@ export class ChatController {
       try {
         for await (const chunk of this.chatService.chatStream(dto)) {
           if (chunk.done) {
-            res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+            // Include sources in the final message
+            res.write(`data: ${JSON.stringify({ done: true, sources: chunk.sources || [] })}\n\n`);
           } else {
             res.write(
               `data: ${JSON.stringify({ content: chunk.content })}\n\n`,

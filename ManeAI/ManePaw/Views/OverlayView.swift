@@ -505,16 +505,22 @@ struct OverlayView: View {
         Task {
             do {
                 var fullResponse = ""
+                var sources: [String] = []
                 
                 for try await chunk in apiService.chatStream(query: query) {
-                    fullResponse += chunk
-                    await MainActor.run {
-                        streamingMessage?.content = fullResponse
+                    switch chunk {
+                    case .content(let text):
+                        fullResponse += text
+                        await MainActor.run {
+                            streamingMessage?.content = fullResponse
+                        }
+                    case .sources(let streamSources):
+                        sources = streamSources.map { $0.filePath }
                     }
                 }
                 
                 await MainActor.run {
-                    let finalMessage = ChatMessage(content: fullResponse, isUser: false)
+                    let finalMessage = ChatMessage(content: fullResponse, isUser: false, sources: sources)
                     chatMessages.append(finalMessage)
                     streamingMessage = nil
                 }
